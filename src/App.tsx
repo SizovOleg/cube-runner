@@ -4,20 +4,37 @@ import {
   CANVAS_WIDTH, CANVAS_HEIGHT, GROUND_Y, COLORS,
   BASE_SPEED, MAX_SPEED_BONUS, ENTITY_SIZE,
   BULLET_SPEED, SHOOT_COOLDOWN, JUMP_FORCE,
+  POWERUP_COLORS, POWERUP_LABELS, PowerupType,
+  LEVEL_BOSS_ARENA_WIDTH, BOSS_INTRO_DURATION,
 } from '@utils/constants';
 import { Player } from '@entities/Player';
 import { Enemy } from '@entities/Enemy';
+import { Powerup } from '@entities/Powerup';
+import { BossGuardian } from '@entities/bosses/Boss1_Guardian';
 import { Camera } from '@engine/Camera';
 import { Input } from '@engine/Input';
 import { ParticleSystem } from '@engine/ParticleSystem';
 import { applyGravity, clampToGround, landingCollision, aabbCollision, stompCheck } from '@engine/Physics';
 import level1 from '@levels/data/level1';
+import { loadProgress, saveLevelComplete, getMaxUnlockedLevel } from '@utils/storage';
+
+// --- Конфиг уровней для экрана выбора ---
+const LEVEL_INFO: Array<{ id: number; name: string; bossName: string }> = [
+  { id: 1, name: 'Neon City', bossName: 'Guardian' },
+  { id: 2, name: 'Dark Factory', bossName: 'Crusher' },
+];
+
+const TOTAL_LEVELS = LEVEL_INFO.length;
 
 // --- Types ---
 
 interface Star { x: number; y: number; size: number; blink: number }
 interface Bullet { x: number; y: number; width: number; height: number }
+interface BombProjectile { x: number; y: number; vx: number; vy: number; width: number; height: number }
 interface DeathInfo { score: number; kills: number }
+interface LevelCompleteInfo { score: number; kills: number }
+
+type BossPhase = 'none' | 'intro' | 'fight' | 'defeated' | 'complete';
 
 // --- Helpers ---
 
@@ -36,6 +53,10 @@ function createStars(count: number): Star[] {
 
 function createEnemies(): Enemy[] {
   return level1.enemies.map((data) => new Enemy({ x: data.x, y: data.y, type: data.type, patrolRange: data.patrolRange }));
+}
+
+function createPowerups(): Powerup[] {
+  return level1.powerups.map((data) => new Powerup(data.x, data.y, data.type));
 }
 
 function neonBtnStyle(bg: string): React.CSSProperties {
@@ -87,18 +108,66 @@ function drawBullets(ctx: CanvasRenderingContext2D, bullets: Bullet[]): void {
   ctx.shadowBlur = 0;
 }
 
+function drawBombs(ctx: CanvasRenderingContext2D, bombs: BombProjectile[], camera: Camera): void {
+  for (const bomb of bombs) {
+    const bx = camera.worldToScreen(bomb.x);
+    ctx.fillStyle = COLORS.bomb;
+    ctx.shadowColor = COLORS.bomb;
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.arc(bx + bomb.width / 2, bomb.y + bomb.height / 2, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 8px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('BM', bx + bomb.width / 2, bomb.y + bomb.height / 2 + 1);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+  }
+}
+
+function drawArenaWalls(ctx: CanvasRenderingContext2D, arenaX: number, camera: Camera): void {
+  const leftWall = camera.worldToScreen(arenaX);
+  const rightWall = camera.worldToScreen(arenaX + LEVEL_BOSS_ARENA_WIDTH);
+  // Стены арены — красные светящиеся вертикальные линии
+  ctx.strokeStyle = '#ff0044';
+  ctx.shadowColor = '#ff0044';
+  ctx.shadowBlur = 10;
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(leftWall, 0);
+  ctx.lineTo(leftWall, GROUND_Y);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(rightWall, 0);
+  ctx.lineTo(rightWall, GROUND_Y);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
 // --- GameCanvas ---
 
-function GameCanvas({ onBack, onRestart }: { onBack: () => void; onRestart: () => void }) {
+interface GameCanvasProps {
+  levelId: number;
+  onBack: () => void;
+  onRestart: () => void;
+  onNextLevel: () => void;
+}
+
+function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const starsRef = useRef<Star[]>(createStars(50));
   const frameRef = useRef(0);
   const rafRef = useRef<number>(0);
   const inputRef = useRef<Input | null>(null);
   const [death, setDeath] = useState<DeathInfo | null>(null);
+  const [levelComplete, setLevelComplete] = useState<LevelCompleteInfo | null>(null);
+  const [inventoryDisplay, setInventoryDisplay] = useState<(PowerupType | null)[]>([null, null, null]);
 
   useEffect(() => {
-    if (death) return;
+    if (death || levelComplete) return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -114,11 +183,22 @@ function GameCanvas({ onBack, onRestart }: { onBack: () => void; onRestart: () =
     const particles = new ParticleSystem();
     const obstacles = level1.obstacles;
     const enemies = createEnemies();
+    const powerups = createPowerups();
     const bullets: Bullet[] = [];
+    const bombs: BombProjectile[] = [];
     const stars = starsRef.current;
+
+    // Босс
+    const arenaX = level1.length;
+    let boss: BossGuardian | null = null;
+    let bossPhase: BossPhase = 'none';
+    let bossIntroTimer = 0;
+    let bossDefeatTimer = 0;
+
     let kills = 0;
     let muzzleFlash = 0;
     let running = true;
+    let invUpdateTick = 0;
 
     const loop = () => {
       if (!running) return;
@@ -129,42 +209,116 @@ function GameCanvas({ onBack, onRestart }: { onBack: () => void; onRestart: () =
       // --- UPDATE ---
 
       const speed = BASE_SPEED + Math.min(camera.x / 6000, MAX_SPEED_BONUS);
-      player.x += speed;
 
-      // Прыжок / полёт
-      if (inp.jump && player.onGround) {
-        player.jump();
-      } else if (inp.jump && !player.onGround) {
-        player.fly();
+      // === BOSS PHASE: defeated (пауза 1 сек перед Level Complete) ===
+      if (bossPhase === 'defeated') {
+        bossDefeatTimer++;
+        particles.update();
+        camera.update(player.x);
+        // Render и return
+        renderFrame(ctx, frame, camera, stars, obstacles, enemies, powerups, bullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp);
+        rafRef.current = requestAnimationFrame(loop);
+        if (bossDefeatTimer >= 60) {
+          const finalScore = Math.floor(camera.x / 10);
+          saveLevelComplete(levelId, finalScore, kills);
+          setLevelComplete({ score: finalScore, kills });
+        }
+        return;
       }
 
-      applyGravity(player);
+      // === BOSS PHASE: intro (заставка 2 сек) ===
+      if (bossPhase === 'intro') {
+        bossIntroTimer++;
+        particles.update();
+        if (bossIntroTimer >= BOSS_INTRO_DURATION) {
+          bossPhase = 'fight';
+          if (boss) boss.introPlaying = false;
+        }
+        renderFrame(ctx, frame, camera, stars, obstacles, enemies, powerups, bullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp);
+        rafRef.current = requestAnimationFrame(loop);
+        return;
+      }
 
-      // Платформы
-      for (const obs of obstacles) {
-        if (obs.type !== 'platform') continue;
-        if (landingCollision(player, obs)) {
-          player.y = obs.y - player.height;
+      // === Проверка входа в босс-арену ===
+      if (bossPhase === 'none' && player.x >= arenaX) {
+        bossPhase = 'intro';
+        bossIntroTimer = 0;
+        camera.lock(arenaX - CANVAS_WIDTH * 0.1);
+        boss = new BossGuardian(arenaX);
+        // Остановить авто-движение, поставить игрока в начало арены
+        player.x = arenaX + 50;
+      }
+
+      // === Режим ракеты ===
+      if (player.isRocketMode()) {
+        player.x += speed * 1.5;
+        if (inp.jump) {
+          player.vy = -4;
+        } else {
+          player.vy += 0.2;
+        }
+        player.y += player.vy;
+        if (player.y < 5) player.y = 5;
+        if (player.y > GROUND_Y - player.height) {
+          player.y = GROUND_Y - player.height;
           player.vy = 0;
+        }
+        if (inp.shoot) {
+          bullets.push({
+            x: player.x + ENTITY_SIZE + 5,
+            y: player.y + ENTITY_SIZE / 2 - 3,
+            width: 12,
+            height: 6,
+          });
+          muzzleFlash = 4;
+        }
+      } else {
+        // Авто-движение (только если не в босс-бою)
+        if (bossPhase !== 'fight') {
+          player.x += speed;
+        }
+
+        if (inp.jump && player.onGround) {
+          player.jump();
+        } else if (inp.jump && !player.onGround) {
+          player.fly();
+        }
+
+        applyGravity(player);
+
+        // Платформы
+        for (const obs of obstacles) {
+          if (obs.type !== 'platform') continue;
+          if (landingCollision(player, obs)) {
+            player.y = obs.y - player.height;
+            player.vy = 0;
+            player.onGround = true;
+          }
+        }
+
+        if (clampToGround(player)) {
           player.onGround = true;
+        }
+        if (player.y < 5) player.y = 5;
+
+        if (inp.shoot && player.shootCooldown <= 0) {
+          bullets.push({
+            x: player.x + ENTITY_SIZE + 5,
+            y: player.y + ENTITY_SIZE / 2 - 3,
+            width: 12,
+            height: 6,
+          });
+          player.shootCooldown = SHOOT_COOLDOWN;
+          muzzleFlash = 6;
         }
       }
 
-      if (clampToGround(player)) {
-        player.onGround = true;
-      }
-      if (player.y < 5) player.y = 5;
-
-      // Стрельба
-      if (inp.shoot && player.shootCooldown <= 0) {
-        bullets.push({
-          x: player.x + ENTITY_SIZE + 5,
-          y: player.y + ENTITY_SIZE / 2 - 3,
-          width: 12,
-          height: 6,
-        });
-        player.shootCooldown = SHOOT_COOLDOWN;
-        muzzleFlash = 6;
+      // Арена: ограничение игрока стенами
+      if (bossPhase === 'fight') {
+        if (player.x < arenaX + 5) player.x = arenaX + 5;
+        if (player.x + player.width > arenaX + LEVEL_BOSS_ARENA_WIDTH - 5) {
+          player.x = arenaX + LEVEL_BOSS_ARENA_WIDTH - 5 - player.width;
+        }
       }
 
       // Обновление пуль
@@ -176,6 +330,67 @@ function GameCanvas({ onBack, onRestart }: { onBack: () => void; onRestart: () =
       }
 
       if (muzzleFlash > 0) muzzleFlash--;
+
+      // Обновление бомб
+      for (let bi = bombs.length - 1; bi >= 0; bi--) {
+        const bomb = bombs[bi];
+        bomb.x += bomb.vx;
+        bomb.y += bomb.vy;
+        bomb.vy += 0.3;
+        if (bomb.y + bomb.height >= GROUND_Y) {
+          const bombScreenX = camera.worldToScreen(bomb.x);
+          particles.bigBurst(bombScreenX + bomb.width / 2, GROUND_Y - 10);
+          for (const enemy of enemies) {
+            if (!enemy.alive) continue;
+            const dist = Math.abs((enemy.x + ENTITY_SIZE / 2) - (bomb.x + bomb.width / 2));
+            if (dist < 120) {
+              enemy.takeDamage(10);
+              kills++;
+              const ex = camera.worldToScreen(enemy.x);
+              particles.burst(ex + ENTITY_SIZE / 2, enemy.y + ENTITY_SIZE / 2, COLORS.enemy, 12);
+            }
+          }
+          // Бомба урон боссу
+          if (boss && boss.alive) {
+            const dist = Math.abs((boss.x + boss.width / 2) - (bomb.x + bomb.width / 2));
+            if (dist < 120) {
+              boss.takeDamage(3);
+              particles.burst(camera.worldToScreen(boss.x + boss.width / 2), boss.y + boss.height / 2, '#ff4400', 15);
+            }
+          }
+          bombs.splice(bi, 1);
+        }
+      }
+
+      // Активация powerup
+      const pwSlot = input.consumePowerup();
+      if (pwSlot !== null) {
+        const activated = player.usePowerup(pwSlot);
+        if (activated === 'bomb') {
+          bombs.push({
+            x: player.x + ENTITY_SIZE,
+            y: player.y,
+            vx: 6,
+            vy: -7,
+            width: 16,
+            height: 16,
+          });
+        }
+      }
+
+      // Сбор powerups
+      for (const pw of powerups) {
+        if (pw.collected) continue;
+        pw.update(frame);
+        const pwHitbox = { x: pw.x, y: pw.y, width: pw.width, height: pw.height };
+        if (aabbCollision(player, pwHitbox)) {
+          if (player.collectPowerup(pw.type)) {
+            pw.collected = true;
+            const sx = camera.worldToScreen(pw.x);
+            particles.burst(sx + pw.width / 2, pw.y + pw.height / 2, POWERUP_COLORS[pw.type], 10);
+          }
+        }
+      }
 
       // Враги
       for (const enemy of enemies) {
@@ -198,13 +413,97 @@ function GameCanvas({ onBack, onRestart }: { onBack: () => void; onRestart: () =
         }
       }
 
+      // Пули → босс
+      if (boss && boss.alive && bossPhase === 'fight') {
+        for (let bi = bullets.length - 1; bi >= 0; bi--) {
+          const b = bullets[bi];
+          if (aabbCollision(b, boss)) {
+            const killed = boss.takeDamage(1);
+            particles.burst(camera.worldToScreen(boss.x + boss.width / 2), boss.y + boss.height / 2, '#ff4400', 8);
+            bullets.splice(bi, 1);
+            if (killed) {
+              bossPhase = 'defeated';
+              bossDefeatTimer = 0;
+              particles.bigBurst(camera.worldToScreen(boss.x + boss.width / 2), boss.y + boss.height / 2);
+              particles.bigBurst(camera.worldToScreen(boss.x + boss.width / 2) + 20, boss.y + 10);
+              particles.bigBurst(camera.worldToScreen(boss.x + boss.width / 2) - 20, boss.y + 30);
+            }
+            break;
+          }
+        }
+      }
+
+      // Стомп на босса
+      if (boss && boss.alive && bossPhase === 'fight') {
+        if (aabbCollision(player, boss)) {
+          if (stompCheck(player, boss)) {
+            const killed = boss.takeDamage(2);
+            player.vy = JUMP_FORCE * 0.7;
+            player.onGround = false;
+            particles.burst(camera.worldToScreen(boss.x + boss.width / 2), boss.y, '#ff4400', 10);
+            if (killed) {
+              bossPhase = 'defeated';
+              bossDefeatTimer = 0;
+              particles.bigBurst(camera.worldToScreen(boss.x + boss.width / 2), boss.y + boss.height / 2);
+              particles.bigBurst(camera.worldToScreen(boss.x + boss.width / 2) + 20, boss.y + 10);
+              particles.bigBurst(camera.worldToScreen(boss.x + boss.width / 2) - 20, boss.y + 30);
+            }
+          } else {
+            // Боковое столкновение с боссом
+            const died = player.takeDamage(1);
+            if (died) {
+              particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, COLORS.cube, 15);
+              setDeath({ score: Math.floor(camera.x / 10), kills });
+              return;
+            }
+          }
+        }
+      }
+
+      // Снаряды и ударные волны босса → игрок
+      if (boss && boss.alive && bossPhase === 'fight') {
+        // Снаряды босса
+        for (const proj of boss.getProjectiles()) {
+          if (aabbCollision(player, proj)) {
+            const died = player.takeDamage(proj.damage);
+            if (died) {
+              particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, COLORS.cube, 15);
+              setDeath({ score: Math.floor(camera.x / 10), kills });
+              return;
+            }
+          }
+        }
+        // Ударные волны босса
+        for (const sw of boss.getShockwaves()) {
+          const playerCenterX = player.x + player.width / 2;
+          const distToCenter = Math.abs(playerCenterX - sw.x);
+          // Волна на уровне земли: проверяем если игрок стоит на земле и в радиусе волны
+          if (player.y + player.height >= GROUND_Y - 5 && distToCenter <= sw.radius + 15 && distToCenter >= sw.radius - 15) {
+            const died = player.takeDamage(1);
+            if (died) {
+              particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, COLORS.cube, 15);
+              setDeath({ score: Math.floor(camera.x / 10), kills });
+              return;
+            }
+          }
+        }
+      }
+
+      // Босс обновление
+      if (boss && boss.alive && bossPhase === 'fight') {
+        boss.update(player.x, player.y);
+      }
+
       // Игрок → враги
       for (const enemy of enemies) {
         if (!enemy.alive) continue;
         if (!aabbCollision(player, enemy)) continue;
-
         const ex = camera.worldToScreen(enemy.x);
-        if (stompCheck(player, enemy)) {
+        if (player.isRocketMode()) {
+          enemy.takeDamage(10);
+          kills++;
+          particles.burst(ex + ENTITY_SIZE / 2, enemy.y + ENTITY_SIZE / 2, COLORS.rocket, 15);
+        } else if (stompCheck(player, enemy)) {
           enemy.takeDamage(1);
           kills++;
           player.vy = JUMP_FORCE * 0.7;
@@ -221,15 +520,17 @@ function GameCanvas({ onBack, onRestart }: { onBack: () => void; onRestart: () =
       }
 
       // Шипы
-      for (const obs of obstacles) {
-        if (obs.type !== 'spike') continue;
-        const spikeHitbox = { x: obs.x + 5, y: obs.y + 5, width: obs.width - 10, height: obs.height - 5 };
-        if (aabbCollision(player, spikeHitbox)) {
-          const died = player.takeDamage(1);
-          if (died) {
-            particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, COLORS.spike, 15);
-            setDeath({ score: Math.floor(camera.x / 10), kills });
-            return;
+      if (!player.isRocketMode()) {
+        for (const obs of obstacles) {
+          if (obs.type !== 'spike') continue;
+          const spikeHitbox = { x: obs.x + 5, y: obs.y + 5, width: obs.width - 10, height: obs.height - 5 };
+          if (aabbCollision(player, spikeHitbox)) {
+            const died = player.takeDamage(1);
+            if (died) {
+              particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, COLORS.spike, 15);
+              setDeath({ score: Math.floor(camera.x / 10), kills });
+              return;
+            }
           }
         }
       }
@@ -239,8 +540,27 @@ function GameCanvas({ onBack, onRestart }: { onBack: () => void; onRestart: () =
       camera.update(player.x);
       particles.update();
 
-      // --- RENDER ---
+      invUpdateTick++;
+      if (invUpdateTick >= 10) {
+        invUpdateTick = 0;
+        setInventoryDisplay([...player.inventory]);
+      }
 
+      // --- RENDER ---
+      renderFrame(ctx, frame, camera, stars, obstacles, enemies, powerups, bullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp);
+
+      rafRef.current = requestAnimationFrame(loop);
+    };
+
+    // Вынесенная функция рендера
+    function renderFrame(
+      ctx: CanvasRenderingContext2D, frame: number, camera: Camera, stars: Star[],
+      obstacles: readonly ObstacleData[], enemies: Enemy[], powerups: Powerup[],
+      bullets: Bullet[], bombs: BombProjectile[], player: Player,
+      particles: ParticleSystem, kills: number, muzzleFlash: number,
+      boss: BossGuardian | null, bossPhase: BossPhase, bossIntroTimer: number,
+      arenaX: number, inp: { jump: boolean },
+    ) {
       ctx.fillStyle = COLORS.bg;
       ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
@@ -278,6 +598,19 @@ function GameCanvas({ onBack, onRestart }: { onBack: () => void; onRestart: () =
       // Препятствия
       drawObstacles(ctx, obstacles, camera);
 
+      // Стены арены (если в босс-зоне)
+      if (bossPhase !== 'none') {
+        drawArenaWalls(ctx, arenaX, camera);
+      }
+
+      // Powerups (culling)
+      for (const pw of powerups) {
+        if (pw.collected) continue;
+        const sx = camera.worldToScreen(pw.x);
+        if (sx < -100 || sx > CANVAS_WIDTH + 100) continue;
+        pw.draw(ctx, sx, frame);
+      }
+
       // Враги (culling)
       for (const enemy of enemies) {
         if (!enemy.alive) continue;
@@ -286,12 +619,20 @@ function GameCanvas({ onBack, onRestart }: { onBack: () => void; onRestart: () =
         enemy.draw(ctx, ex, frame);
       }
 
+      // Босс
+      if (boss && bossPhase !== 'none' && !(bossPhase === 'defeated' && !boss.alive)) {
+        boss.draw(ctx, frame, camera.x);
+      }
+
       // Пули (screen space)
       const screenBullets = bullets.map((b) => ({
         ...b,
         x: camera.worldToScreen(b.x),
       }));
       drawBullets(ctx, screenBullets);
+
+      // Бомбы
+      drawBombs(ctx, bombs, camera);
 
       // Игрок
       const screenX = camera.worldToScreen(player.x);
@@ -310,8 +651,22 @@ function GameCanvas({ onBack, onRestart }: { onBack: () => void; onRestart: () =
         ctx.globalAlpha = 1;
       }
 
-      // Частицы полёта
-      if (inp.jump && !player.onGround) {
+      // Огненный след ракеты
+      if (player.isRocketMode()) {
+        for (let ti = 0; ti < 3; ti++) {
+          const trailX = screenX - 5 - Math.random() * 15;
+          const trailY = player.y + ENTITY_SIZE / 2 + (Math.random() - 0.5) * 12;
+          const trailSize = 3 + Math.random() * 5;
+          ctx.globalAlpha = 0.5 + Math.random() * 0.3;
+          ctx.fillStyle = ['#ff4400', '#ffcc00', '#ff8800', '#ff44ff'][Math.floor(Math.random() * 4)];
+          ctx.fillRect(trailX, trailY, trailSize, trailSize);
+        }
+        ctx.globalAlpha = 1;
+        particles.burst(screenX - 5, player.y + ENTITY_SIZE / 2, '#ff8800', 1);
+      }
+
+      // Частицы полёта (обычный режим)
+      if (!player.isRocketMode() && inp.jump && !player.onGround) {
         const px = screenX + Math.random() * ENTITY_SIZE;
         const py = player.y + ENTITY_SIZE + Math.random() * 5;
         ctx.globalAlpha = 0.5;
@@ -323,23 +678,130 @@ function GameCanvas({ onBack, onRestart }: { onBack: () => void; onRestart: () =
       // Взрывы
       particles.draw(ctx);
 
-      // HUD
+      // --- HUD ---
+
+      // Босс-интро: крупное имя по центру
+      if (bossPhase === 'intro' && boss) {
+        const introAlpha = bossIntroTimer < 30
+          ? bossIntroTimer / 30
+          : bossIntroTimer > BOSS_INTRO_DURATION - 30
+            ? (BOSS_INTRO_DURATION - bossIntroTimer) / 30
+            : 1;
+        ctx.globalAlpha = introAlpha;
+        ctx.fillStyle = '#ff0044';
+        ctx.shadowColor = '#ff0044';
+        ctx.shadowBlur = 30;
+        ctx.font = 'bold 48px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(boss.name, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 20);
+        ctx.shadowBlur = 0;
+        ctx.font = '18px monospace';
+        ctx.fillStyle = '#fff';
+        ctx.fillText('BOSS BATTLE', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 20);
+        ctx.textAlign = 'left';
+        ctx.globalAlpha = 1;
+        return; // Не рисуем HUD поверх интро
+      }
+
+      // Boss defeated overlay
+      if (bossPhase === 'defeated') {
+        ctx.fillStyle = '#fff';
+        ctx.shadowColor = '#00ff88';
+        ctx.shadowBlur = 20;
+        ctx.font = 'bold 36px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('VICTORY!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+        ctx.shadowBlur = 0;
+        ctx.textAlign = 'left';
+      }
+
+      // Score & Kills (не поверх boss HP)
+      if (bossPhase !== 'fight') {
+        ctx.fillStyle = COLORS.text;
+        ctx.font = 'bold 18px monospace';
+        ctx.fillText('Score: ' + Math.floor(camera.x / 10), 20, 30);
+        ctx.fillText('Kills: ' + kills, 160, 30);
+      } else {
+        // Score/Kills мельче, внизу слева в бою
+        ctx.fillStyle = '#aaa';
+        ctx.font = '14px monospace';
+        ctx.fillText('Score: ' + Math.floor(camera.x / 10) + '  Kills: ' + kills, 20, GROUND_Y + 25);
+      }
+
+      // HP
+      const hpY = bossPhase === 'fight' ? GROUND_Y + 35 : 42;
+      const hpLabelY = bossPhase === 'fight' ? GROUND_Y + 48 : 55;
       ctx.fillStyle = COLORS.text;
       ctx.font = 'bold 18px monospace';
-      ctx.fillText('Score: ' + Math.floor(camera.x / 10), 20, 30);
-      ctx.fillText('Kills: ' + kills, 160, 30);
-
-      ctx.fillText('HP:', 20, 55);
+      ctx.fillText('HP:', 20, hpLabelY);
       for (let i = 0; i < player.maxHP; i++) {
         ctx.fillStyle = i < player.hp ? COLORS.cube : '#333';
         ctx.shadowColor = i < player.hp ? COLORS.cubeGlow : 'transparent';
         ctx.shadowBlur = i < player.hp ? 8 : 0;
-        ctx.fillRect(70 + i * 22, 42, 16, 16);
+        ctx.fillRect(70 + i * 22, hpY, 16, 16);
       }
       ctx.shadowBlur = 0;
 
-      rafRef.current = requestAnimationFrame(loop);
-    };
+      // Инвентарь powerups
+      for (let si = 0; si < 3; si++) {
+        const slotX = CANVAS_WIDTH - 110 + si * 34;
+        const slotY = 10;
+        const slotPw = player.inventory[si];
+        ctx.strokeStyle = slotPw ? POWERUP_COLORS[slotPw] : '#444';
+        ctx.lineWidth = 2;
+        ctx.shadowColor = slotPw ? POWERUP_COLORS[slotPw] : 'transparent';
+        ctx.shadowBlur = slotPw ? 8 : 0;
+        ctx.strokeRect(slotX, slotY, 28, 28);
+        ctx.shadowBlur = 0;
+        if (slotPw) {
+          ctx.globalAlpha = 0.3;
+          ctx.fillStyle = POWERUP_COLORS[slotPw];
+          ctx.fillRect(slotX + 1, slotY + 1, 26, 26);
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = '#fff';
+          ctx.font = 'bold 10px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(POWERUP_LABELS[slotPw], slotX + 14, slotY + 18);
+          ctx.textAlign = 'left';
+        }
+        ctx.fillStyle = '#666';
+        ctx.font = '9px monospace';
+        ctx.fillText(String(si + 1), slotX + 2, slotY + 26);
+      }
+
+      // Таймер-бар Shield / Rocket
+      if (player.isRocketMode()) {
+        const barW = 80;
+        const ratio = player.rocketTimer / 180;
+        ctx.fillStyle = '#330033';
+        ctx.fillRect(CANVAS_WIDTH / 2 - barW / 2, 8, barW, 8);
+        ctx.fillStyle = COLORS.rocket;
+        ctx.shadowColor = COLORS.rocket;
+        ctx.shadowBlur = 6;
+        ctx.fillRect(CANVAS_WIDTH / 2 - barW / 2, 8, barW * ratio, 8);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#fff';
+        ctx.font = '8px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('ROCKET', CANVAS_WIDTH / 2, 6);
+        ctx.textAlign = 'left';
+      } else if (player.isShielded() && bossPhase !== 'fight') {
+        const barW = 80;
+        const ratio = player.shieldTimer / 300;
+        ctx.fillStyle = '#002233';
+        ctx.fillRect(CANVAS_WIDTH / 2 - barW / 2, 8, barW, 8);
+        ctx.fillStyle = COLORS.shield;
+        ctx.shadowColor = COLORS.shield;
+        ctx.shadowBlur = 6;
+        ctx.fillRect(CANVAS_WIDTH / 2 - barW / 2, 8, barW * ratio, 8);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#fff';
+        ctx.font = '8px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('SHIELD', CANVAS_WIDTH / 2, 6);
+        ctx.textAlign = 'left';
+      }
+    }
 
     rafRef.current = requestAnimationFrame(loop);
 
@@ -348,7 +810,7 @@ function GameCanvas({ onBack, onRestart }: { onBack: () => void; onRestart: () =
       cancelAnimationFrame(rafRef.current);
       input.detach();
     };
-  }, [death]);
+  }, [death, levelComplete]);
 
   // Touch: canvas tap = jump
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
@@ -378,6 +840,66 @@ function GameCanvas({ onBack, onRestart }: { onBack: () => void; onRestart: () =
     inputRef.current?.setShoot(false);
   }, []);
 
+  // Powerup touch buttons
+  const handlePwSlot0 = useCallback((e: React.TouchEvent | React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    inputRef.current?.triggerPowerup(0);
+  }, []);
+  const handlePwSlot1 = useCallback((e: React.TouchEvent | React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    inputRef.current?.triggerPowerup(1);
+  }, []);
+  const handlePwSlot2 = useCallback((e: React.TouchEvent | React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    inputRef.current?.triggerPowerup(2);
+  }, []);
+  const pwHandlers = [handlePwSlot0, handlePwSlot1, handlePwSlot2];
+
+  // === Level Complete screen ===
+  if (levelComplete) {
+    const hasNextLevel = levelId < TOTAL_LEVELS;
+    return (
+      <div
+        style={{
+          width: CANVAS_WIDTH, maxWidth: '100%', height: CANVAS_HEIGHT,
+          background: COLORS.bg, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', borderRadius: 12,
+          fontFamily: 'monospace',
+        }}
+      >
+        {/* Звезда победы */}
+        <div style={{ fontSize: 48, marginBottom: 4 }}>&#9733;</div>
+        <div style={{ fontSize: 36, fontWeight: 'bold', color: COLORS.cube, textShadow: '0 0 30px rgba(0,255,136,0.5)', marginBottom: 12 }}>
+          LEVEL COMPLETE
+        </div>
+        <div style={{ color: '#aaa', fontSize: 14, marginBottom: 8 }}>
+          {LEVEL_INFO[levelId - 1]?.name ?? `Level ${levelId}`} &mdash; Boss Defeated!
+        </div>
+        <div style={{ color: '#fff', fontSize: 20, marginBottom: 5 }}>
+          Score: {levelComplete.score}
+        </div>
+        <div style={{ color: '#fff', fontSize: 20, marginBottom: 5 }}>
+          Kills: {levelComplete.kills}
+        </div>
+        <div style={{ height: 20 }} />
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+          {hasNextLevel ? (
+            <button style={neonBtnStyle('#00aa66')} onClick={onNextLevel}>Next Level</button>
+          ) : (
+            <button
+              style={{ ...neonBtnStyle('#555'), cursor: 'default', opacity: 0.6 }}
+              disabled
+            >
+              Coming Soon...
+            </button>
+          )}
+          <button style={neonBtnStyle('#3355ff')} onClick={onBack}>Menu</button>
+        </div>
+      </div>
+    );
+  }
+
+  // === Death screen ===
   if (death) {
     return (
       <div
@@ -435,8 +957,8 @@ function GameCanvas({ onBack, onRestart }: { onBack: () => void; onRestart: () =
         style={{
           position: 'absolute', bottom: 12, right: 12,
           width: 54, height: 54, borderRadius: 27,
-          border: '3px solid #ffaa00', background: 'rgba(255,255,0,0.7)',
-          color: '#fff', fontSize: 14, fontWeight: 'bold',
+          border: '3px solid #ffaa00', background: 'rgba(255,255,0,0.15)',
+          color: '#ffaa00', fontSize: 14, fontWeight: 'bold',
           cursor: 'pointer', display: 'flex', alignItems: 'center',
           justifyContent: 'center', fontFamily: 'monospace',
           touchAction: 'none',
@@ -444,6 +966,32 @@ function GameCanvas({ onBack, onRestart }: { onBack: () => void; onRestart: () =
       >
         GUN
       </button>
+      {[0, 1, 2].map((slot) => {
+        const pw = inventoryDisplay[slot];
+        const color = pw ? POWERUP_COLORS[pw] : '#555';
+        const label = pw ? POWERUP_LABELS[pw] : String(slot + 1);
+        return (
+          <button
+            key={slot}
+            onMouseDown={pwHandlers[slot]}
+            onTouchStart={pwHandlers[slot]}
+            style={{
+              position: 'absolute', bottom: 12, left: 12 + slot * 50,
+              width: 44, height: 44, borderRadius: 22,
+              border: `2px solid ${color}`,
+              background: pw ? color + '30' : 'rgba(50,50,50,0.3)',
+              color: pw ? '#fff' : '#666',
+              fontSize: 12, fontWeight: 'bold',
+              cursor: 'pointer', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', fontFamily: 'monospace',
+              touchAction: 'none',
+              boxShadow: pw ? `0 0 10px ${color}60` : 'none',
+            }}
+          >
+            {label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -452,7 +1000,7 @@ function GameCanvas({ onBack, onRestart }: { onBack: () => void; onRestart: () =
 
 export default function App() {
   const [screen, setScreen] = useState<GameScreen>('menu');
-  const [_currentLevel, setCurrentLevel] = useState(1);
+  const [currentLevel, setCurrentLevel] = useState(1);
   const [gameKey, setGameKey] = useState(0);
 
   const startLevel = useCallback((levelId: number) => {
@@ -473,6 +1021,22 @@ export default function App() {
     setGameKey((k) => k + 1);
   }, []);
 
+  const nextLevel = useCallback(() => {
+    setCurrentLevel((prev) => {
+      const next = prev + 1;
+      return next <= TOTAL_LEVELS ? next : prev;
+    });
+    setGameKey((k) => k + 1);
+  }, []);
+
+  // Кнопка "Играть" — запускает последний доступный уровень
+  const handlePlay = useCallback(() => {
+    const maxLevel = getMaxUnlockedLevel();
+    // Не выше максимально существующего
+    const targetLevel = Math.min(maxLevel, TOTAL_LEVELS);
+    startLevel(targetLevel);
+  }, [startLevel]);
+
   return (
     <div
       style={{
@@ -480,66 +1044,203 @@ export default function App() {
         alignItems: 'center', justifyContent: 'center', fontFamily: 'monospace',
       }}
     >
+      {/* === ГЛАВНОЕ МЕНЮ === */}
       {screen === 'menu' && (
         <div
           style={{
-            width: 800, maxWidth: '100%', height: 400, background: '#0a0a2e',
+            width: CANVAS_WIDTH, maxWidth: '100%', height: CANVAS_HEIGHT, background: COLORS.bg,
             display: 'flex', flexDirection: 'column', alignItems: 'center',
-            justifyContent: 'center', borderRadius: 12,
+            justifyContent: 'center', borderRadius: 12, position: 'relative', overflow: 'hidden',
           }}
         >
-          <div style={{ fontSize: 40, fontWeight: 'bold', color: '#00ff88', textShadow: '0 0 30px rgba(0,255,136,0.4)', marginBottom: 8 }}>
+          {/* Декоративные неоновые линии */}
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0, height: 3,
+            background: 'linear-gradient(90deg, transparent, #00ff88, #00ffcc, #3355ff, transparent)',
+          }} />
+          <div style={{
+            position: 'absolute', bottom: 0, left: 0, right: 0, height: 3,
+            background: 'linear-gradient(90deg, transparent, #3355ff, #00ffcc, #00ff88, transparent)',
+          }} />
+
+          <div style={{
+            fontSize: 44, fontWeight: 'bold', color: '#00ff88',
+            textShadow: '0 0 30px rgba(0,255,136,0.5), 0 0 60px rgba(0,255,136,0.2)',
+            marginBottom: 4, letterSpacing: 4,
+          }}>
             CUBE RUNNER
           </div>
-          <div style={{ fontSize: 18, color: '#00ffcc', marginBottom: 24 }}>Battle Dash</div>
-          <button onClick={() => startLevel(1)} style={neonBtnStyle('#00aa66')}>Играть</button>
-          <button onClick={goToLevelSelect} style={neonBtnStyle('#3355ff')}>Выбор уровня</button>
-          <div style={{ color: '#8888cc', marginTop: 16, fontSize: 12, textAlign: 'center', lineHeight: '2.2' }}>
-            Space/Tap = прыжок | X/Z/Shift = стрельба<br />1,2,3 = использовать powerup
+          <div style={{
+            fontSize: 16, color: '#00ffcc', marginBottom: 32,
+            textShadow: '0 0 10px rgba(0,255,204,0.3)',
+            letterSpacing: 6,
+          }}>
+            BATTLE DASH
           </div>
-        </div>
-      )}
 
-      {screen === 'levelSelect' && (
-        <div
-          style={{
-            width: 800, maxWidth: '100%', height: 400, background: '#0a0a2e',
-            display: 'flex', flexDirection: 'column', alignItems: 'center',
-            justifyContent: 'center', borderRadius: 12,
-          }}
-        >
-          <div style={{ fontSize: 28, color: '#fff', marginBottom: 24 }}>Выбор уровня</div>
-          <div style={{ display: 'flex', gap: 16 }}>
-            {[1, 2].map((id) => (
-              <button
-                key={id}
-                onClick={() => startLevel(id)}
-                style={{
-                  width: 80, height: 80, borderRadius: 12, border: '2px solid #00ffcc',
-                  background: 'rgba(0,255,204,0.1)', color: '#fff', fontSize: 24,
-                  fontWeight: 'bold', cursor: 'pointer', fontFamily: 'monospace',
-                }}
-              >
-                {id}
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={goToMenu}
-            style={{
-              marginTop: 24, padding: '10px 24px', background: 'transparent',
-              border: '1px solid #666', borderRadius: 8, color: '#888',
-              cursor: 'pointer', fontFamily: 'monospace',
-            }}
-          >
-            Назад
+          <button onClick={handlePlay} style={neonBtnStyle('#00aa66')}>
+            Играть
           </button>
+          <button onClick={goToLevelSelect} style={neonBtnStyle('#3355ff')}>
+            Выбор уровня
+          </button>
+
+          <div style={{
+            color: '#6666aa', marginTop: 20, fontSize: 11,
+            textAlign: 'center', lineHeight: '2',
+          }}>
+            Space/Tap = прыжок &nbsp;|&nbsp; X/Z/Shift = стрельба<br />
+            1, 2, 3 = использовать powerup &nbsp;|&nbsp; Esc = пауза
+          </div>
         </div>
       )}
 
+      {/* === ВЫБОР УРОВНЯ === */}
+      {screen === 'levelSelect' && <LevelSelectScreen onStart={startLevel} onBack={goToMenu} />}
+
+      {/* === ИГРА === */}
       {screen === 'playing' && (
-        <GameCanvas key={gameKey} onBack={goToMenu} onRestart={restartLevel} />
+        <GameCanvas
+          key={gameKey}
+          levelId={currentLevel}
+          onBack={goToMenu}
+          onRestart={restartLevel}
+          onNextLevel={currentLevel < TOTAL_LEVELS ? nextLevel : goToMenu}
+        />
       )}
+    </div>
+  );
+}
+
+// --- Level Select Screen ---
+
+function LevelSelectScreen({ onStart, onBack }: { onStart: (id: number) => void; onBack: () => void }) {
+  const progress = loadProgress();
+
+  return (
+    <div
+      style={{
+        width: CANVAS_WIDTH, maxWidth: '100%', height: CANVAS_HEIGHT, background: COLORS.bg,
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        justifyContent: 'center', borderRadius: 12, position: 'relative',
+      }}
+    >
+      <div style={{
+        fontSize: 28, fontWeight: 'bold', color: '#fff', marginBottom: 28,
+        textShadow: '0 0 15px rgba(255,255,255,0.2)',
+      }}>
+        Выбор уровня
+      </div>
+
+      <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', justifyContent: 'center' }}>
+        {LEVEL_INFO.map((info) => {
+          const unlocked = progress.unlockedLevels.includes(info.id);
+          const bossDefeated = progress.bossesDefeated.includes(info.id);
+          const bestScore = progress.bestScores[info.id];
+          const isCurrent = unlocked && !bossDefeated;
+
+          return (
+            <button
+              key={info.id}
+              onClick={() => unlocked && onStart(info.id)}
+              disabled={!unlocked}
+              style={{
+                width: 160, height: 140, borderRadius: 16,
+                border: isCurrent
+                  ? '2px solid #00ffcc'
+                  : unlocked
+                    ? '2px solid #3355ff'
+                    : '2px solid #333',
+                background: unlocked
+                  ? isCurrent
+                    ? 'rgba(0,255,204,0.08)'
+                    : 'rgba(51,85,255,0.06)'
+                  : 'rgba(30,30,30,0.5)',
+                cursor: unlocked ? 'pointer' : 'default',
+                fontFamily: 'monospace',
+                display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center',
+                position: 'relative', overflow: 'hidden',
+                transition: 'box-shadow 0.2s, border-color 0.2s',
+                boxShadow: isCurrent
+                  ? '0 0 20px rgba(0,255,204,0.2)'
+                  : unlocked
+                    ? '0 0 10px rgba(51,85,255,0.15)'
+                    : 'none',
+              }}
+            >
+              {/* Замок для заблокированных */}
+              {!unlocked && (
+                <div style={{ fontSize: 32, color: '#555', marginBottom: 4 }}>&#128274;</div>
+              )}
+
+              {/* Звезда за победу над боссом */}
+              {bossDefeated && (
+                <div style={{
+                  position: 'absolute', top: 8, right: 10,
+                  fontSize: 18, color: '#ffcc00',
+                  textShadow: '0 0 8px rgba(255,204,0,0.6)',
+                }}>
+                  &#9733;
+                </div>
+              )}
+
+              {/* Номер уровня */}
+              <div style={{
+                fontSize: unlocked ? 32 : 24, fontWeight: 'bold',
+                color: unlocked ? '#fff' : '#444',
+                marginBottom: 4,
+              }}>
+                {info.id}
+              </div>
+
+              {/* Имя уровня */}
+              <div style={{
+                fontSize: 12, color: unlocked ? '#aaa' : '#444',
+                marginBottom: 2,
+              }}>
+                {info.name}
+              </div>
+
+              {/* Имя босса */}
+              <div style={{
+                fontSize: 10, color: unlocked ? '#ff4466' : '#333',
+              }}>
+                Boss: {info.bossName}
+              </div>
+
+              {/* Лучший Score */}
+              {bestScore !== undefined && (
+                <div style={{
+                  fontSize: 10, color: '#00ff88', marginTop: 6,
+                }}>
+                  Best: {bestScore}
+                </div>
+              )}
+
+              {/* Текущий (подсветка) */}
+              {isCurrent && (
+                <div style={{
+                  position: 'absolute', bottom: 0, left: 0, right: 0, height: 2,
+                  background: '#00ffcc',
+                  boxShadow: '0 0 8px #00ffcc',
+                }} />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <button
+        onClick={onBack}
+        style={{
+          marginTop: 28, padding: '10px 28px', background: 'transparent',
+          border: '1px solid #555', borderRadius: 8, color: '#888',
+          cursor: 'pointer', fontFamily: 'monospace', fontSize: 14,
+        }}
+      >
+        Назад
+      </button>
     </div>
   );
 }

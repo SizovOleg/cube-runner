@@ -119,7 +119,7 @@ export abstract class Boss {
 
   // Абстрактные методы — реализуются в конкретных боссах
   abstract updateBehavior(playerX: number, playerY: number): void;
-  abstract draw(ctx: CanvasRenderingContext2D, frame: number): void;
+  abstract draw(ctx: CanvasRenderingContext2D, frame: number, cameraX?: number): void;
   abstract onPhaseChange(newPhase: number): void;
   abstract onDefeat(): void;
 

@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(cat *)",
+      "Bash(ls *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Read(*)",
+      "Write(src/**)",
+      "Write(public/**)",
+      "Write(docs/**)",
+      "Write(package.json)",
+      "Write(tsconfig.json)",
+      "Write(vite.config.ts)"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(scp *)",
+      "Bash(ssh *)"
+    ]
+  }
+}
