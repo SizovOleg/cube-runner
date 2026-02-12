@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { GameScreen, ObstacleData } from '@levels/types';
+import { GameScreen } from '@levels/types';
 import {
   CANVAS_WIDTH, CANVAS_HEIGHT, GROUND_Y, COLORS,
   BASE_SPEED, MAX_SPEED_BONUS, ENTITY_SIZE,
@@ -11,18 +11,28 @@ import { Player } from '@entities/Player';
 import { Enemy } from '@entities/Enemy';
 import { Powerup } from '@entities/Powerup';
 import { BossGuardian } from '@entities/bosses/Boss1_Guardian';
+import { BossCrusher } from '@entities/bosses/Boss2_Crusher';
+import { Boss } from '@entities/Boss';
 import { Camera } from '@engine/Camera';
 import { Input } from '@engine/Input';
 import { ParticleSystem } from '@engine/ParticleSystem';
 import { applyGravity, clampToGround, landingCollision, aabbCollision, stompCheck } from '@engine/Physics';
 import level1 from '@levels/data/level1';
+import level2 from '@levels/data/level2';
+import { LevelData, ObstacleData } from '@levels/types';
 import { loadProgress, saveLevelComplete, getMaxUnlockedLevel } from '@utils/storage';
 
 // --- Конфиг уровней для экрана выбора ---
 const LEVEL_INFO: Array<{ id: number; name: string; bossName: string }> = [
   { id: 1, name: 'Neon City', bossName: 'Guardian' },
-  { id: 2, name: 'Dark Factory', bossName: 'Crusher' },
+  { id: 2, name: 'Cyber Sewer', bossName: 'Crusher' },
 ];
+
+// Карта уровней по ID
+const LEVELS: Record<number, LevelData> = {
+  1: level1,
+  2: level2,
+};
 
 const TOTAL_LEVELS = LEVEL_INFO.length;
 
@@ -30,9 +40,12 @@ const TOTAL_LEVELS = LEVEL_INFO.length;
 
 interface Star { x: number; y: number; size: number; blink: number }
 interface Bullet { x: number; y: number; width: number; height: number }
+interface EnemyBullet { x: number; y: number; vx: number; width: number; height: number }
 interface BombProjectile { x: number; y: number; vx: number; vy: number; width: number; height: number }
 interface DeathInfo { score: number; kills: number }
 interface LevelCompleteInfo { score: number; kills: number }
+// Мутабельная копия ObstacleData для движущихся платформ
+interface MovingObstacle { x: number; y: number; baseX: number; baseY: number; width: number; height: number; type: string; moveRange: number; moveSpeed: number; moveAxis: 'x' | 'y'; dir: number }
 
 type BossPhase = 'none' | 'intro' | 'fight' | 'defeated' | 'complete';
 
@@ -51,12 +64,23 @@ function createStars(count: number): Star[] {
   return stars;
 }
 
-function createEnemies(): Enemy[] {
-  return level1.enemies.map((data) => new Enemy({ x: data.x, y: data.y, type: data.type, patrolRange: data.patrolRange }));
+function createEnemies(level: LevelData): Enemy[] {
+  return level.enemies.map((data) => new Enemy({ x: data.x, y: data.y, type: data.type, patrolRange: data.patrolRange }));
 }
 
-function createPowerups(): Powerup[] {
-  return level1.powerups.map((data) => new Powerup(data.x, data.y, data.type));
+function createPowerups(level: LevelData): Powerup[] {
+  return level.powerups.map((data) => new Powerup(data.x, data.y, data.type));
+}
+
+function createMovingPlatforms(level: LevelData): MovingObstacle[] {
+  return level.obstacles
+    .filter((obs) => obs.type === 'moving_platform' && obs.moveRange && obs.moveSpeed)
+    .map((obs) => ({
+      x: obs.x, y: obs.y, baseX: obs.x, baseY: obs.y,
+      width: obs.width, height: obs.height, type: obs.type,
+      moveRange: obs.moveRange!, moveSpeed: obs.moveSpeed!,
+      moveAxis: obs.moveAxis ?? 'y', dir: 1,
+    }));
 }
 
 function neonBtnStyle(bg: string): React.CSSProperties {
@@ -70,8 +94,10 @@ function neonBtnStyle(bg: string): React.CSSProperties {
 
 // --- Drawing ---
 
-function drawObstacles(ctx: CanvasRenderingContext2D, obstacles: readonly ObstacleData[], camera: Camera): void {
+function drawObstacles(ctx: CanvasRenderingContext2D, obstacles: readonly ObstacleData[], movingPlatforms: MovingObstacle[], camera: Camera): void {
+  // Статические препятствия (кроме moving_platform — они рисуются отдельно)
   for (const obs of obstacles) {
+    if (obs.type === 'moving_platform') continue;
     const ox = camera.worldToScreen(obs.x);
     if (ox < -100 || ox > CANVAS_WIDTH + 100) continue;
     if (obs.type === 'spike') {
@@ -91,6 +117,31 @@ function drawObstacles(ctx: CanvasRenderingContext2D, obstacles: readonly Obstac
       ctx.shadowBlur = 6;
       ctx.fillRect(ox, obs.y, obs.width, obs.height);
       ctx.shadowBlur = 0;
+    }
+  }
+  // Движущиеся платформы
+  for (const mp of movingPlatforms) {
+    const mx = camera.worldToScreen(mp.x);
+    if (mx < -100 || mx > CANVAS_WIDTH + 100) continue;
+    ctx.fillStyle = '#44aaff';
+    ctx.shadowColor = '#44aaff';
+    ctx.shadowBlur = 8;
+    ctx.fillRect(mx, mp.y, mp.width, mp.height);
+    // Стрелочки-индикаторы направления движения
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    if (mp.moveAxis === 'y') {
+      // Стрелка вверх-вниз
+      ctx.beginPath();
+      ctx.moveTo(mx + mp.width / 2 - 4, mp.y + mp.height / 2);
+      ctx.lineTo(mx + mp.width / 2, mp.y + 2);
+      ctx.lineTo(mx + mp.width / 2 + 4, mp.y + mp.height / 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(mx + mp.width / 2 - 4, mp.y + mp.height / 2);
+      ctx.lineTo(mx + mp.width / 2, mp.y + mp.height - 2);
+      ctx.lineTo(mx + mp.width / 2 + 4, mp.y + mp.height / 2);
+      ctx.fill();
     }
   }
 }
@@ -178,19 +229,27 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
     input.attach();
     inputRef.current = input;
 
+    const levelData = LEVELS[levelId] ?? level1;
     const player = new Player(100, 3);
     const camera = new Camera();
     const particles = new ParticleSystem();
-    const obstacles = level1.obstacles;
-    const enemies = createEnemies();
-    const powerups = createPowerups();
+    const obstacles = levelData.obstacles;
+    const enemies = createEnemies(levelData);
+    const powerups = createPowerups(levelData);
+    const movingPlatforms = createMovingPlatforms(levelData);
     const bullets: Bullet[] = [];
+    const enemyBullets: EnemyBullet[] = [];
     const bombs: BombProjectile[] = [];
     const stars = starsRef.current;
 
+    // Цвета уровня
+    const bgColor = levelData.backgroundColor ?? COLORS.bg;
+    const groundColor = levelData.groundColor ?? COLORS.ground;
+    const groundLineColor = levelData.groundColor ? '#33aa44' : COLORS.groundLine;
+
     // Босс
-    const arenaX = level1.length;
-    let boss: BossGuardian | null = null;
+    const arenaX = levelData.length;
+    let boss: Boss | null = null;
     let bossPhase: BossPhase = 'none';
     let bossIntroTimer = 0;
     let bossDefeatTimer = 0;
@@ -216,7 +275,7 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
         particles.update();
         camera.update(player.x);
         // Render и return
-        renderFrame(ctx, frame, camera, stars, obstacles, enemies, powerups, bullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp);
+        renderFrame(ctx, frame, camera, stars, obstacles, movingPlatforms, enemies, powerups, bullets, enemyBullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp, bgColor, groundColor, groundLineColor);
         rafRef.current = requestAnimationFrame(loop);
         if (bossDefeatTimer >= 60) {
           const finalScore = Math.floor(camera.x / 10);
@@ -234,7 +293,7 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
           bossPhase = 'fight';
           if (boss) boss.introPlaying = false;
         }
-        renderFrame(ctx, frame, camera, stars, obstacles, enemies, powerups, bullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp);
+        renderFrame(ctx, frame, camera, stars, obstacles, movingPlatforms, enemies, powerups, bullets, enemyBullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp, bgColor, groundColor, groundLineColor);
         rafRef.current = requestAnimationFrame(loop);
         return;
       }
@@ -244,7 +303,12 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
         bossPhase = 'intro';
         bossIntroTimer = 0;
         camera.lock(arenaX - CANVAS_WIDTH * 0.1);
-        boss = new BossGuardian(arenaX);
+        // Создание босса в зависимости от уровня
+        if (levelId === 2) {
+          boss = new BossCrusher(arenaX);
+        } else {
+          boss = new BossGuardian(arenaX);
+        }
         // Остановить авто-движение, поставить игрока в начало арены
         player.x = arenaX + 50;
       }
@@ -286,11 +350,27 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
 
         applyGravity(player);
 
-        // Платформы
+        // Платформы (статические)
         for (const obs of obstacles) {
           if (obs.type !== 'platform') continue;
           if (landingCollision(player, obs)) {
             player.y = obs.y - player.height;
+            player.vy = 0;
+            player.onGround = true;
+          }
+        }
+
+        // Движущиеся платформы: обновление позиции и коллизия
+        for (const mp of movingPlatforms) {
+          if (mp.moveAxis === 'y') {
+            mp.y += mp.moveSpeed * mp.dir;
+            if (Math.abs(mp.y - mp.baseY) >= mp.moveRange) mp.dir *= -1;
+          } else {
+            mp.x += mp.moveSpeed * mp.dir;
+            if (Math.abs(mp.x - mp.baseX) >= mp.moveRange) mp.dir *= -1;
+          }
+          if (landingCollision(player, mp)) {
+            player.y = mp.y - player.height;
             player.vy = 0;
             player.onGround = true;
           }
@@ -395,6 +475,38 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
       // Враги
       for (const enemy of enemies) {
         enemy.update(player.x);
+        // Шутеры: создание вражеских пуль
+        if (enemy.alive && enemy.shouldShoot()) {
+          const dx = player.x - enemy.x;
+          enemyBullets.push({
+            x: enemy.x + (dx > 0 ? ENTITY_SIZE : -8),
+            y: enemy.y + ENTITY_SIZE / 2 - 3,
+            vx: dx > 0 ? 4 : -4,
+            width: 10,
+            height: 6,
+          });
+        }
+      }
+
+      // Обновление вражеских пуль
+      for (let i = enemyBullets.length - 1; i >= 0; i--) {
+        enemyBullets[i].x += enemyBullets[i].vx;
+        if (enemyBullets[i].x < camera.x - 100 || enemyBullets[i].x > camera.x + CANVAS_WIDTH + 100) {
+          enemyBullets.splice(i, 1);
+          continue;
+        }
+        // Попадание вражеской пули в игрока
+        if (aabbCollision(player, enemyBullets[i])) {
+          enemyBullets.splice(i, 1);
+          if (!player.isRocketMode()) {
+            const died = player.takeDamage(1);
+            if (died) {
+              particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, COLORS.cube, 15);
+              setDeath({ score: Math.floor(camera.x / 10), kills });
+              return;
+            }
+          }
+        }
       }
 
       // Пули → враги
@@ -547,7 +659,7 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
       }
 
       // --- RENDER ---
-      renderFrame(ctx, frame, camera, stars, obstacles, enemies, powerups, bullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp);
+      renderFrame(ctx, frame, camera, stars, obstacles, movingPlatforms, enemies, powerups, bullets, enemyBullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp, bgColor, groundColor, groundLineColor);
 
       rafRef.current = requestAnimationFrame(loop);
     };
@@ -555,13 +667,23 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
     // Вынесенная функция рендера
     function renderFrame(
       ctx: CanvasRenderingContext2D, frame: number, camera: Camera, stars: Star[],
-      obstacles: readonly ObstacleData[], enemies: Enemy[], powerups: Powerup[],
-      bullets: Bullet[], bombs: BombProjectile[], player: Player,
+      obstacles: readonly ObstacleData[], movingPlatforms: MovingObstacle[],
+      enemies: Enemy[], powerups: Powerup[],
+      bullets: Bullet[], enemyBullets: EnemyBullet[], bombs: BombProjectile[], player: Player,
       particles: ParticleSystem, kills: number, muzzleFlash: number,
-      boss: BossGuardian | null, bossPhase: BossPhase, bossIntroTimer: number,
+      boss: Boss | null, bossPhase: BossPhase, bossIntroTimer: number,
       arenaX: number, inp: { jump: boolean },
+      bgColor: string, groundColor: string, groundLineColor: string,
     ) {
-      ctx.fillStyle = COLORS.bg;
+      // Тряска экрана от Crusher
+      const shakeX = boss && 'screenShake' in boss ? (boss as BossCrusher).screenShake * (Math.random() - 0.5) : 0;
+      const shakeY = boss && 'screenShake' in boss ? (boss as BossCrusher).screenShake * (Math.random() - 0.5) : 0;
+      if (shakeX || shakeY) {
+        ctx.save();
+        ctx.translate(shakeX, shakeY);
+      }
+
+      ctx.fillStyle = bgColor;
       ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
       // Звёзды
@@ -574,9 +696,9 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
       ctx.globalAlpha = 1;
 
       // Земля
-      ctx.fillStyle = COLORS.ground;
+      ctx.fillStyle = groundColor;
       ctx.fillRect(0, GROUND_Y, CANVAS_WIDTH, CANVAS_HEIGHT - GROUND_Y);
-      ctx.strokeStyle = COLORS.groundLine;
+      ctx.strokeStyle = groundLineColor;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(0, GROUND_Y);
@@ -595,8 +717,8 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
       }
       ctx.globalAlpha = 1;
 
-      // Препятствия
-      drawObstacles(ctx, obstacles, camera);
+      // Препятствия (статические + движущиеся)
+      drawObstacles(ctx, obstacles, movingPlatforms, camera);
 
       // Стены арены (если в босс-зоне)
       if (bossPhase !== 'none') {
@@ -633,6 +755,16 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
 
       // Бомбы
       drawBombs(ctx, bombs, camera);
+
+      // Вражеские пули (красные)
+      ctx.fillStyle = '#ff2222';
+      ctx.shadowColor = '#ff2222';
+      ctx.shadowBlur = 6;
+      for (const eb of enemyBullets) {
+        const ebx = camera.worldToScreen(eb.x);
+        ctx.fillRect(ebx, eb.y, eb.width, eb.height);
+      }
+      ctx.shadowBlur = 0;
 
       // Игрок
       const screenX = camera.worldToScreen(player.x);
@@ -688,8 +820,9 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
             ? (BOSS_INTRO_DURATION - bossIntroTimer) / 30
             : 1;
         ctx.globalAlpha = introAlpha;
-        ctx.fillStyle = '#ff0044';
-        ctx.shadowColor = '#ff0044';
+        const bossIntroColor = levelId === 2 ? '#8800cc' : '#ff0044';
+        ctx.fillStyle = bossIntroColor;
+        ctx.shadowColor = bossIntroColor;
         ctx.shadowBlur = 30;
         ctx.font = 'bold 48px monospace';
         ctx.textAlign = 'center';
@@ -800,6 +933,11 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
         ctx.textAlign = 'center';
         ctx.fillText('SHIELD', CANVAS_WIDTH / 2, 6);
         ctx.textAlign = 'left';
+      }
+
+      // Восстановление после тряски
+      if (shakeX || shakeY) {
+        ctx.restore();
       }
     }
 

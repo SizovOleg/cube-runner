@@ -133,4 +133,14 @@ export abstract class Boss {
     height: number;
     damage: number;
   }>;
+
+  /**
+   * Получить ударные волны (для проверки коллизий с игроком).
+   * Боссы без волн возвращают пустой массив.
+   */
+  abstract getShockwaves(): Array<{
+    x: number;
+    radius: number;
+    maxRadius: number;
+  }>;
 }
