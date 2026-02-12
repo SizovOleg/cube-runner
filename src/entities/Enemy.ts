@@ -11,9 +11,9 @@ interface EnemyConfig {
 /**
  * Враг. Разные типы имеют разное поведение.
  * - basic: стоит на месте, убивается одним ударом
- * - shooter: стреляет в сторону игрока
- * - flying: летает вверх-вниз
- * - armored: требует 2 удара
+ * - shooter: стреляет в сторону игрока, красная точка-прицел мигает перед выстрелом
+ * - flying: летает вверх-вниз, маленькие крылья
+ * - armored: требует 2 удара, металлический блеск
  */
 export class Enemy {
   x: number;
@@ -109,11 +109,48 @@ export class Enemy {
 
     const color = this.type === 'armored' ? '#aa2222' : COLORS.enemy;
 
+    // === Flying: крылья (рисуются ДО тела) ===
+    if (this.type === 'flying') {
+      const wingFlap = Math.sin(frame * 0.15) * 5;
+      ctx.fillStyle = 'rgba(255,100,100,0.5)';
+      // Левое крыло
+      ctx.beginPath();
+      ctx.moveTo(screenX, this.y + 8);
+      ctx.lineTo(screenX - 10, this.y + 12 + wingFlap);
+      ctx.lineTo(screenX, this.y + 20);
+      ctx.closePath();
+      ctx.fill();
+      // Правое крыло
+      ctx.beginPath();
+      ctx.moveTo(screenX + this.width, this.y + 8);
+      ctx.lineTo(screenX + this.width + 10, this.y + 12 + wingFlap);
+      ctx.lineTo(screenX + this.width, this.y + 20);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Тело
     ctx.fillStyle = color;
     ctx.shadowColor = color;
     ctx.shadowBlur = 10;
     ctx.fillRect(screenX, this.y, this.width, this.height);
     ctx.shadowBlur = 0;
+
+    // === Armored: металлический блеск (горизонтальная линия-блик) ===
+    if (this.type === 'armored') {
+      const shineY = (frame * 2) % (this.height + 20) - 10;
+      if (shineY >= 0 && shineY < this.height - 2) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(screenX, this.y, this.width, this.height);
+        ctx.clip();
+        ctx.globalAlpha = 0.35;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(screenX, this.y + shineY, this.width, 3);
+        ctx.globalAlpha = 1;
+        ctx.restore();
+      }
+    }
 
     // Глаза
     ctx.fillStyle = COLORS.enemyEye;
@@ -132,6 +169,18 @@ export class Enemy {
     ctx.moveTo(screenX + 25, this.y + 5);
     ctx.lineTo(screenX + 17, this.y + 7);
     ctx.stroke();
+
+    // === Shooter: красная точка-прицел мигает перед выстрелом ===
+    if (this.type === 'shooter' && this.shootCooldown > 0 && this.shootCooldown < 20) {
+      const dotRadius = 2 + Math.sin(frame * 0.5) * 1;
+      ctx.fillStyle = '#ff0000';
+      ctx.shadowColor = '#ff0000';
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.arc(screenX + this.width / 2, this.y + this.height / 2 + 2, dotRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
 
     // Индикатор HP для armored
     if (this.type === 'armored' && this.hp > 1) {

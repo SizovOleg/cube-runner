@@ -35,6 +35,18 @@ export class ParticleSystem {
   }
 
   /**
+   * Лёгкий одиночный след (для трейла игрока и атмосферных эффектов).
+   */
+  trail(x: number, y: number, color: string, size = 4, life = 15): void {
+    this.particles.push({
+      x, y,
+      vx: 0, vy: 0,
+      life, maxLife: life,
+      color, size,
+    });
+  }
+
+  /**
    * Большой взрыв (для бомб и боссов).
    */
   bigBurst(x: number, y: number): void {

@@ -12,6 +12,7 @@ import { Enemy } from '@entities/Enemy';
 import { Powerup } from '@entities/Powerup';
 import { BossGuardian } from '@entities/bosses/Boss1_Guardian';
 import { BossCrusher } from '@entities/bosses/Boss2_Crusher';
+import { BossFrostKing } from '@entities/bosses/Boss3_FrostKing';
 import { Boss } from '@entities/Boss';
 import { Camera } from '@engine/Camera';
 import { Input } from '@engine/Input';
@@ -19,6 +20,7 @@ import { ParticleSystem } from '@engine/ParticleSystem';
 import { applyGravity, clampToGround, landingCollision, aabbCollision, stompCheck } from '@engine/Physics';
 import level1 from '@levels/data/level1';
 import level2 from '@levels/data/level2';
+import level3 from '@levels/data/level3';
 import { LevelData, ObstacleData } from '@levels/types';
 import { loadProgress, saveLevelComplete, getMaxUnlockedLevel } from '@utils/storage';
 
@@ -26,12 +28,14 @@ import { loadProgress, saveLevelComplete, getMaxUnlockedLevel } from '@utils/sto
 const LEVEL_INFO: Array<{ id: number; name: string; bossName: string }> = [
   { id: 1, name: 'Neon City', bossName: 'Guardian' },
   { id: 2, name: 'Cyber Sewer', bossName: 'Crusher' },
+  { id: 3, name: 'Ice Citadel', bossName: 'Frost King' },
 ];
 
 // Карта уровней по ID
 const LEVELS: Record<number, LevelData> = {
   1: level1,
   2: level2,
+  3: level3,
 };
 
 const TOTAL_LEVELS = LEVEL_INFO.length;
@@ -92,6 +96,136 @@ function neonBtnStyle(bg: string): React.CSSProperties {
   };
 }
 
+// --- Atmosphere & Ground Effects ---
+
+// Nebulae for Level 1 (pre-generated positions)
+const NEBULAE = [
+  { x: 200, y: 80, r: 90, color: 'rgba(255,0,102,0.07)' },
+  { x: 600, y: 150, r: 120, color: 'rgba(0,255,136,0.05)' },
+  { x: 1100, y: 60, r: 80, color: 'rgba(51,85,255,0.06)' },
+  { x: 1700, y: 180, r: 100, color: 'rgba(255,0,200,0.05)' },
+  { x: 2400, y: 100, r: 110, color: 'rgba(0,200,255,0.06)' },
+];
+
+interface RainDrop { x: number; y: number; speed: number; len: number }
+interface Snowflake { x: number; y: number; size: number; speed: number; drift: number }
+
+function createRainDrops(count: number): RainDrop[] {
+  return Array.from({ length: count }, () => ({
+    x: Math.random() * CANVAS_WIDTH,
+    y: Math.random() * GROUND_Y,
+    speed: 2 + Math.random() * 3,
+    len: 6 + Math.random() * 6,
+  }));
+}
+
+function createSnowflakes(count: number): Snowflake[] {
+  return Array.from({ length: count }, () => ({
+    x: Math.random() * CANVAS_WIDTH,
+    y: Math.random() * GROUND_Y,
+    size: 1 + Math.random() * 2,
+    speed: 0.3 + Math.random() * 0.7,
+    drift: Math.random() * Math.PI * 2,
+  }));
+}
+
+function drawAtmosphere(ctx: CanvasRenderingContext2D, frame: number, camera: Camera, levelId: number, rain: RainDrop[], snow: Snowflake[]): void {
+  if (levelId === 1) {
+    // Неоновые туманности — полупрозрачные размытые круги с параллаксом
+    for (const neb of NEBULAE) {
+      const nx = ((neb.x - camera.x * 0.1) % (CANVAS_WIDTH * 1.5) + CANVAS_WIDTH * 1.5) % (CANVAS_WIDTH * 1.5) - 150;
+      ctx.fillStyle = neb.color;
+      ctx.beginPath();
+      ctx.arc(nx, neb.y + Math.sin(frame * 0.005 + neb.x) * 10, neb.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (levelId === 2) {
+    // Матричные капли — зелёные пиксели падают вниз
+    ctx.fillStyle = 'rgba(34,255,68,0.4)';
+    for (const drop of rain) {
+      drop.y += drop.speed;
+      if (drop.y > GROUND_Y) {
+        drop.y = -10;
+        drop.x = Math.random() * CANVAS_WIDTH;
+      }
+      ctx.fillRect(drop.x, drop.y, 2, drop.len);
+    }
+  } else if (levelId === 3) {
+    // Снежинки — белые точки, медленные, разного размера
+    for (const sf of snow) {
+      sf.y += sf.speed;
+      sf.x += Math.sin(frame * 0.02 + sf.drift) * 0.3;
+      if (sf.y > GROUND_Y) {
+        sf.y = -5;
+        sf.x = Math.random() * CANVAS_WIDTH;
+      }
+      ctx.globalAlpha = 0.4 + sf.size * 0.1;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(sf.x, sf.y, sf.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawGroundTexture(ctx: CanvasRenderingContext2D, camera: Camera, levelId: number, _groundColor: string): void {
+  // Случайные пиксели на земле для текстуры
+  const startTile = Math.floor(camera.x / 20) * 20;
+  ctx.globalAlpha = 0.15;
+  for (let wx = startTile; wx < startTile + CANVAS_WIDTH + 40; wx += 20) {
+    const sx = wx - camera.x;
+    // Псевдослучайность на основе позиции
+    const seed = (wx * 7 + 13) % 100;
+    if (seed < 40) {
+      const py = GROUND_Y + 8 + (seed % 3) * 12;
+      ctx.fillStyle = seed % 2 === 0 ? '#ffffff' : '#000000';
+      ctx.fillRect(sx, py, 3, 3);
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // Декорации по верхнему краю земли
+  const decoStart = Math.floor(camera.x / 40) * 40;
+  for (let wx = decoStart; wx < decoStart + CANVAS_WIDTH + 80; wx += 40) {
+    const sx = wx - camera.x;
+    const seed = (wx * 3 + 7) % 100;
+    if (seed > 60) continue; // не все позиции заняты
+
+    if (levelId === 1) {
+      // Трава — маленькие зелёные треугольники
+      ctx.fillStyle = '#33cc44';
+      const h = 5 + (seed % 4);
+      ctx.beginPath();
+      ctx.moveTo(sx, GROUND_Y);
+      ctx.lineTo(sx + 3, GROUND_Y - h);
+      ctx.lineTo(sx + 6, GROUND_Y);
+      ctx.closePath();
+      ctx.fill();
+    } else if (levelId === 2) {
+      // Токсичные капли — перевёрнутые зелёные треугольники
+      ctx.fillStyle = '#22aa33';
+      const h = 4 + (seed % 3);
+      ctx.beginPath();
+      ctx.moveTo(sx, GROUND_Y);
+      ctx.lineTo(sx + 3, GROUND_Y + h);
+      ctx.lineTo(sx + 6, GROUND_Y);
+      ctx.closePath();
+      ctx.fill();
+    } else if (levelId === 3) {
+      // Ледяные кристаллы — голубые треугольники вверх
+      ctx.fillStyle = '#88ccff';
+      const h = 5 + (seed % 5);
+      ctx.beginPath();
+      ctx.moveTo(sx, GROUND_Y);
+      ctx.lineTo(sx + 3, GROUND_Y - h);
+      ctx.lineTo(sx + 6, GROUND_Y);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+}
+
 // --- Drawing ---
 
 function drawObstacles(ctx: CanvasRenderingContext2D, obstacles: readonly ObstacleData[], movingPlatforms: MovingObstacle[], camera: Camera): void {
@@ -142,6 +276,18 @@ function drawObstacles(ctx: CanvasRenderingContext2D, obstacles: readonly Obstac
       ctx.lineTo(mx + mp.width / 2, mp.y + mp.height - 2);
       ctx.lineTo(mx + mp.width / 2 + 4, mp.y + mp.height / 2);
       ctx.fill();
+    } else {
+      // Стрелка влево-вправо
+      ctx.beginPath();
+      ctx.moveTo(mx + mp.width / 2, mp.y + mp.height / 2 - 4);
+      ctx.lineTo(mx + 2, mp.y + mp.height / 2);
+      ctx.lineTo(mx + mp.width / 2, mp.y + mp.height / 2 + 4);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(mx + mp.width / 2, mp.y + mp.height / 2 - 4);
+      ctx.lineTo(mx + mp.width - 2, mp.y + mp.height / 2);
+      ctx.lineTo(mx + mp.width / 2, mp.y + mp.height / 2 + 4);
+      ctx.fill();
     }
   }
 }
@@ -179,12 +325,12 @@ function drawBombs(ctx: CanvasRenderingContext2D, bombs: BombProjectile[], camer
   }
 }
 
-function drawArenaWalls(ctx: CanvasRenderingContext2D, arenaX: number, camera: Camera): void {
+function drawArenaWalls(ctx: CanvasRenderingContext2D, arenaX: number, camera: Camera, wallColor = '#ff0044'): void {
   const leftWall = camera.worldToScreen(arenaX);
   const rightWall = camera.worldToScreen(arenaX + LEVEL_BOSS_ARENA_WIDTH);
-  // Стены арены — красные светящиеся вертикальные линии
-  ctx.strokeStyle = '#ff0044';
-  ctx.shadowColor = '#ff0044';
+  // Стены арены — светящиеся вертикальные линии
+  ctx.strokeStyle = wallColor;
+  ctx.shadowColor = wallColor;
   ctx.shadowBlur = 10;
   ctx.lineWidth = 4;
   ctx.beginPath();
@@ -241,11 +387,14 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
     const enemyBullets: EnemyBullet[] = [];
     const bombs: BombProjectile[] = [];
     const stars = starsRef.current;
+    const rainDrops = levelId === 2 ? createRainDrops(30) : [];
+    const snowflakes = levelId === 3 ? createSnowflakes(40) : [];
+    let displayScore = 0; // Анимированный score для HUD
 
     // Цвета уровня
     const bgColor = levelData.backgroundColor ?? COLORS.bg;
     const groundColor = levelData.groundColor ?? COLORS.ground;
-    const groundLineColor = levelData.groundColor ? '#33aa44' : COLORS.groundLine;
+    const groundLineColor = levelId === 3 ? '#4466cc' : levelData.groundColor ? '#33aa44' : COLORS.groundLine;
 
     // Босс
     const arenaX = levelData.length;
@@ -304,7 +453,9 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
         bossIntroTimer = 0;
         camera.lock(arenaX - CANVAS_WIDTH * 0.1);
         // Создание босса в зависимости от уровня
-        if (levelId === 2) {
+        if (levelId === 3) {
+          boss = new BossFrostKing(arenaX);
+        } else if (levelId === 2) {
           boss = new BossCrusher(arenaX);
         } else {
           boss = new BossGuardian(arenaX);
@@ -349,6 +500,7 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
         }
 
         applyGravity(player);
+        const wasInAir = !player.onGround;
 
         // Платформы (статические)
         for (const obs of obstacles) {
@@ -378,6 +530,10 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
 
         if (clampToGround(player)) {
           player.onGround = true;
+        }
+        // Squash-stretch при приземлении
+        if (wasInAir && player.onGround) {
+          player.triggerLanding();
         }
         if (player.y < 5) player.y = 5;
 
@@ -599,6 +755,19 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
             }
           }
         }
+        // Ледяные столбы Frost King
+        if ('getIcePillars' in boss) {
+          for (const pillar of (boss as BossFrostKing).getIcePillars()) {
+            if (aabbCollision(player, pillar)) {
+              const died = player.takeDamage(pillar.damage);
+              if (died) {
+                particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, '#88ddff', 15);
+                setDeath({ score: Math.floor(camera.x / 10), kills });
+                return;
+              }
+            }
+          }
+        }
       }
 
       // Босс обновление
@@ -675,9 +844,10 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
       arenaX: number, inp: { jump: boolean },
       bgColor: string, groundColor: string, groundLineColor: string,
     ) {
-      // Тряска экрана от Crusher
-      const shakeX = boss && 'screenShake' in boss ? (boss as BossCrusher).screenShake * (Math.random() - 0.5) : 0;
-      const shakeY = boss && 'screenShake' in boss ? (boss as BossCrusher).screenShake * (Math.random() - 0.5) : 0;
+      // Тряска экрана от боссов (Crusher / FrostKing)
+      const shakeVal = boss && 'screenShake' in boss ? (boss as { screenShake: number }).screenShake : 0;
+      const shakeX = shakeVal * (Math.random() - 0.5);
+      const shakeY = shakeVal * (Math.random() - 0.5);
       if (shakeX || shakeY) {
         ctx.save();
         ctx.translate(shakeX, shakeY);
@@ -694,6 +864,9 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
         ctx.fillRect(sx, star.y, star.size, star.size);
       }
       ctx.globalAlpha = 1;
+
+      // Атмосферные эффекты уровня
+      drawAtmosphere(ctx, frame, camera, levelId, rainDrops, snowflakes);
 
       // Земля
       ctx.fillStyle = groundColor;
@@ -717,12 +890,16 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
       }
       ctx.globalAlpha = 1;
 
+      // Текстура земли
+      drawGroundTexture(ctx, camera, levelId, groundColor);
+
       // Препятствия (статические + движущиеся)
       drawObstacles(ctx, obstacles, movingPlatforms, camera);
 
       // Стены арены (если в босс-зоне)
       if (bossPhase !== 'none') {
-        drawArenaWalls(ctx, arenaX, camera);
+        const arenaWallColor = levelId === 3 ? '#00aaff' : levelId === 2 ? '#8800cc' : '#ff0044';
+        drawArenaWalls(ctx, arenaX, camera, arenaWallColor);
       }
 
       // Powerups (culling)
@@ -812,15 +989,54 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
 
       // --- HUD ---
 
-      // Босс-интро: крупное имя по центру
+      // Босс-интро: затемнение + молнии + крупное имя
       if (bossPhase === 'intro' && boss) {
         const introAlpha = bossIntroTimer < 30
           ? bossIntroTimer / 30
           : bossIntroTimer > BOSS_INTRO_DURATION - 30
             ? (BOSS_INTRO_DURATION - bossIntroTimer) / 30
             : 1;
+
+        // Затемнение экрана
+        const darkAlpha = Math.min(bossIntroTimer / 30, 1) * 0.3;
+        ctx.fillStyle = `rgba(0,0,0,${darkAlpha})`;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        // Молнии по краям экрана
+        const bossIntroColor = levelId === 3 ? '#00aaff' : levelId === 2 ? '#8800cc' : '#ff0044';
+        if (bossIntroTimer < 80) {
+          ctx.strokeStyle = bossIntroColor;
+          ctx.shadowColor = bossIntroColor;
+          ctx.shadowBlur = 15;
+          ctx.lineWidth = 2;
+          ctx.globalAlpha = introAlpha * 0.7;
+          // Левая молния
+          for (let li = 0; li < 2; li++) {
+            ctx.beginPath();
+            let lx = 10 + li * 8;
+            ctx.moveTo(lx, 0);
+            for (let segY = 30; segY < GROUND_Y; segY += 30) {
+              lx += (Math.random() - 0.5) * 25;
+              ctx.lineTo(Math.max(2, Math.min(lx, 30)), segY);
+            }
+            ctx.stroke();
+          }
+          // Правая молния
+          for (let li = 0; li < 2; li++) {
+            ctx.beginPath();
+            let lx = CANVAS_WIDTH - 10 - li * 8;
+            ctx.moveTo(lx, 0);
+            for (let segY = 30; segY < GROUND_Y; segY += 30) {
+              lx += (Math.random() - 0.5) * 25;
+              ctx.lineTo(Math.max(CANVAS_WIDTH - 30, Math.min(lx, CANVAS_WIDTH - 2)), segY);
+            }
+            ctx.stroke();
+          }
+          ctx.shadowBlur = 0;
+        }
+
+        // Текст имени босса
         ctx.globalAlpha = introAlpha;
-        const bossIntroColor = levelId === 2 ? '#8800cc' : '#ff0044';
         ctx.fillStyle = bossIntroColor;
         ctx.shadowColor = bossIntroColor;
         ctx.shadowBlur = 30;
@@ -848,17 +1064,23 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
         ctx.textAlign = 'left';
       }
 
+      // Анимированный Score (плавный подсчёт)
+      const actualScore = Math.floor(camera.x / 10);
+      displayScore += (actualScore - displayScore) * 0.15;
+      if (Math.abs(displayScore - actualScore) < 1) displayScore = actualScore;
+      const shownScore = Math.floor(displayScore);
+
       // Score & Kills (не поверх boss HP)
       if (bossPhase !== 'fight') {
         ctx.fillStyle = COLORS.text;
         ctx.font = 'bold 18px monospace';
-        ctx.fillText('Score: ' + Math.floor(camera.x / 10), 20, 30);
+        ctx.fillText('Score: ' + shownScore, 20, 30);
         ctx.fillText('Kills: ' + kills, 160, 30);
       } else {
         // Score/Kills мельче, внизу слева в бою
         ctx.fillStyle = '#aaa';
         ctx.font = '14px monospace';
-        ctx.fillText('Score: ' + Math.floor(camera.x / 10) + '  Kills: ' + kills, 20, GROUND_Y + 25);
+        ctx.fillText('Score: ' + shownScore + '  Kills: ' + kills, 20, GROUND_Y + 25);
       }
 
       // HP
@@ -1183,55 +1405,7 @@ export default function App() {
       }}
     >
       {/* === ГЛАВНОЕ МЕНЮ === */}
-      {screen === 'menu' && (
-        <div
-          style={{
-            width: CANVAS_WIDTH, maxWidth: '100%', height: CANVAS_HEIGHT, background: COLORS.bg,
-            display: 'flex', flexDirection: 'column', alignItems: 'center',
-            justifyContent: 'center', borderRadius: 12, position: 'relative', overflow: 'hidden',
-          }}
-        >
-          {/* Декоративные неоновые линии */}
-          <div style={{
-            position: 'absolute', top: 0, left: 0, right: 0, height: 3,
-            background: 'linear-gradient(90deg, transparent, #00ff88, #00ffcc, #3355ff, transparent)',
-          }} />
-          <div style={{
-            position: 'absolute', bottom: 0, left: 0, right: 0, height: 3,
-            background: 'linear-gradient(90deg, transparent, #3355ff, #00ffcc, #00ff88, transparent)',
-          }} />
-
-          <div style={{
-            fontSize: 44, fontWeight: 'bold', color: '#00ff88',
-            textShadow: '0 0 30px rgba(0,255,136,0.5), 0 0 60px rgba(0,255,136,0.2)',
-            marginBottom: 4, letterSpacing: 4,
-          }}>
-            CUBE RUNNER
-          </div>
-          <div style={{
-            fontSize: 16, color: '#00ffcc', marginBottom: 32,
-            textShadow: '0 0 10px rgba(0,255,204,0.3)',
-            letterSpacing: 6,
-          }}>
-            BATTLE DASH
-          </div>
-
-          <button onClick={handlePlay} style={neonBtnStyle('#00aa66')}>
-            Играть
-          </button>
-          <button onClick={goToLevelSelect} style={neonBtnStyle('#3355ff')}>
-            Выбор уровня
-          </button>
-
-          <div style={{
-            color: '#6666aa', marginTop: 20, fontSize: 11,
-            textAlign: 'center', lineHeight: '2',
-          }}>
-            Space/Tap = прыжок &nbsp;|&nbsp; X/Z/Shift = стрельба<br />
-            1, 2, 3 = использовать powerup &nbsp;|&nbsp; Esc = пауза
-          </div>
-        </div>
-      )}
+      {screen === 'menu' && <MenuScreen onPlay={handlePlay} onLevelSelect={goToLevelSelect} />}
 
       {/* === ВЫБОР УРОВНЯ === */}
       {screen === 'levelSelect' && <LevelSelectScreen onStart={startLevel} onBack={goToMenu} />}
@@ -1250,7 +1424,253 @@ export default function App() {
   );
 }
 
+// --- Animated Menu Screen ---
+
+function MenuScreen({ onPlay, onLevelSelect }: { onPlay: () => void; onLevelSelect: () => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const rafRef = useRef<number>(0);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const menuStars = createStars(40);
+    // Демо-сцена: куб бежит и перепрыгивает шипы
+    const spikes = [200, 420, 580]; // X позиции шипов
+    let cubeX = -30;
+    let cubeY = GROUND_Y - ENTITY_SIZE;
+    let cubeVy = 0;
+    let cubeOnGround = true;
+    let cubeRotation = 0;
+    let frame = 0;
+    let running = true;
+
+    const loop = () => {
+      if (!running) return;
+      frame++;
+      const demoSpeed = 2.5;
+
+      // Куб движется вправо, зацикливается
+      cubeX += demoSpeed;
+      if (cubeX > CANVAS_WIDTH + 40) cubeX = -40;
+      cubeRotation += demoSpeed * 2;
+
+      // Автоматический прыжок перед шипами
+      for (const spikeX of spikes) {
+        if (cubeOnGround && cubeX > spikeX - 60 && cubeX < spikeX - 40) {
+          cubeVy = JUMP_FORCE;
+          cubeOnGround = false;
+        }
+      }
+
+      // Гравитация
+      cubeVy += 0.45;
+      cubeY += cubeVy;
+      if (cubeY >= GROUND_Y - ENTITY_SIZE) {
+        cubeY = GROUND_Y - ENTITY_SIZE;
+        cubeVy = 0;
+        cubeOnGround = true;
+      }
+
+      // Рендер
+      ctx.fillStyle = COLORS.bg;
+      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+      // Звёзды
+      for (const star of menuStars) {
+        const sx = (star.x + frame * 0.2) % CANVAS_WIDTH;
+        ctx.globalAlpha = 0.3 + Math.sin(star.blink + frame * 0.02) * 0.3;
+        ctx.fillStyle = COLORS.star;
+        ctx.fillRect(sx, star.y, star.size, star.size);
+      }
+      ctx.globalAlpha = 1;
+
+      // Земля
+      ctx.fillStyle = COLORS.ground;
+      ctx.fillRect(0, GROUND_Y, CANVAS_WIDTH, CANVAS_HEIGHT - GROUND_Y);
+      ctx.strokeStyle = COLORS.groundLine;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, GROUND_Y);
+      ctx.lineTo(CANVAS_WIDTH, GROUND_Y);
+      ctx.stroke();
+
+      // Шипы
+      for (const spikeX of spikes) {
+        ctx.fillStyle = COLORS.spike;
+        ctx.shadowColor = COLORS.spike;
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.moveTo(spikeX, GROUND_Y);
+        ctx.lineTo(spikeX + 10, GROUND_Y - 18);
+        ctx.lineTo(spikeX + 20, GROUND_Y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+
+      // Куб-персонаж
+      ctx.save();
+      ctx.translate(cubeX + ENTITY_SIZE / 2, cubeY + ENTITY_SIZE / 2);
+      ctx.rotate((cubeRotation * Math.PI) / 180);
+      ctx.shadowColor = COLORS.cubeGlow;
+      ctx.shadowBlur = 15;
+      ctx.fillStyle = COLORS.cube;
+      ctx.fillRect(-ENTITY_SIZE / 2, -ENTITY_SIZE / 2, ENTITY_SIZE, ENTITY_SIZE);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(-7, -5, 4, 4);
+      ctx.fillRect(3, -5, 4, 4);
+      ctx.fillRect(-5, 3, 10, 2);
+      ctx.restore();
+
+      // Трейл куба
+      for (let ti = 1; ti <= 3; ti++) {
+        ctx.globalAlpha = 0.1 / ti;
+        ctx.fillStyle = COLORS.cube;
+        const trailSize = ENTITY_SIZE * (1 - ti * 0.15);
+        ctx.fillRect(
+          cubeX - ti * demoSpeed * 3 + (ENTITY_SIZE - trailSize) / 2,
+          cubeY + (ENTITY_SIZE - trailSize) / 2,
+          trailSize, trailSize,
+        );
+      }
+      ctx.globalAlpha = 1;
+
+      rafRef.current = requestAnimationFrame(loop);
+    };
+
+    rafRef.current = requestAnimationFrame(loop);
+    return () => {
+      running = false;
+      cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
+
+  return (
+    <div style={{ position: 'relative', width: CANVAS_WIDTH, maxWidth: '100%', height: CANVAS_HEIGHT }}>
+      <canvas
+        ref={canvasRef}
+        width={CANVAS_WIDTH}
+        height={CANVAS_HEIGHT}
+        style={{ display: 'block', borderRadius: 12 }}
+      />
+      {/* Оверлей с UI */}
+      <div style={{
+        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        justifyContent: 'center', fontFamily: 'monospace',
+      }}>
+        {/* Декоративные неоновые линии */}
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, height: 3,
+          background: 'linear-gradient(90deg, transparent, #00ff88, #00ffcc, #3355ff, transparent)',
+        }} />
+        <div style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0, height: 3,
+          background: 'linear-gradient(90deg, transparent, #3355ff, #00ffcc, #00ff88, transparent)',
+        }} />
+
+        <div style={{
+          fontSize: 44, fontWeight: 'bold', color: '#00ff88',
+          textShadow: '0 0 30px rgba(0,255,136,0.5), 0 0 60px rgba(0,255,136,0.2)',
+          marginBottom: 4, letterSpacing: 4,
+        }}>
+          CUBE RUNNER
+        </div>
+        <div style={{
+          fontSize: 16, color: '#00ffcc', marginBottom: 32,
+          textShadow: '0 0 10px rgba(0,255,204,0.3)',
+          letterSpacing: 6,
+        }}>
+          BATTLE DASH
+        </div>
+
+        <button onClick={onPlay} style={neonBtnStyle('#00aa66')}>
+          Играть
+        </button>
+        <button onClick={onLevelSelect} style={neonBtnStyle('#3355ff')}>
+          Выбор уровня
+        </button>
+
+        <div style={{
+          color: '#6666aa', marginTop: 20, fontSize: 11,
+          textAlign: 'center', lineHeight: '2',
+        }}>
+          Space/Tap = прыжок &nbsp;|&nbsp; X/Z/Shift = стрельба<br />
+          1, 2, 3 = использовать powerup &nbsp;|&nbsp; Esc = пауза
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // --- Level Select Screen ---
+
+// Миниатюра-превью уровня
+function LevelPreview({ levelId }: { levelId: number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const data = LEVELS[levelId];
+    if (!data) return;
+
+    const w = 120, h = 50;
+    // Фон уровня
+    ctx.fillStyle = data.backgroundColor ?? COLORS.bg;
+    ctx.fillRect(0, 0, w, h);
+
+    // Земля
+    const groundY = 40;
+    ctx.fillStyle = data.groundColor ?? COLORS.ground;
+    ctx.fillRect(0, groundY, w, h - groundY);
+
+    // Маленькие шипы
+    const spikeColor = COLORS.spike;
+    ctx.fillStyle = spikeColor;
+    for (let i = 0; i < 4; i++) {
+      const sx = 25 + i * 25;
+      ctx.beginPath();
+      ctx.moveTo(sx, groundY);
+      ctx.lineTo(sx + 3, groundY - 6);
+      ctx.lineTo(sx + 6, groundY);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Маленький игрок (зелёный квадрат)
+    ctx.fillStyle = COLORS.cube;
+    ctx.shadowColor = COLORS.cubeGlow;
+    ctx.shadowBlur = 4;
+    ctx.fillRect(8, groundY - 8, 7, 7);
+    ctx.shadowBlur = 0;
+
+    // Силуэт босса (правый край)
+    const bossColors: Record<number, string> = { 1: '#ff0044', 2: '#4a0066', 3: '#00aaff' };
+    ctx.fillStyle = bossColors[levelId] ?? '#ff0044';
+    ctx.shadowColor = bossColors[levelId] ?? '#ff0044';
+    ctx.shadowBlur = 4;
+    ctx.fillRect(100, groundY - 12, 12, 12);
+    ctx.shadowBlur = 0;
+
+    // Звёзды (несколько точек)
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    for (let i = 0; i < 8; i++) {
+      ctx.fillRect(
+        (i * 17 + 5) % w,
+        (i * 7 + 3) % (groundY - 5),
+        1, 1,
+      );
+    }
+  }, [levelId]);
+
+  return <canvas ref={canvasRef} width={120} height={50} style={{ borderRadius: 6, display: 'block', marginBottom: 4 }} />;
+}
 
 function LevelSelectScreen({ onStart, onBack }: { onStart: (id: number) => void; onBack: () => void }) {
   const progress = loadProgress();
@@ -1283,7 +1703,7 @@ function LevelSelectScreen({ onStart, onBack }: { onStart: (id: number) => void;
               onClick={() => unlocked && onStart(info.id)}
               disabled={!unlocked}
               style={{
-                width: 160, height: 140, borderRadius: 16,
+                width: 160, height: 200, borderRadius: 16, padding: '8px 0 0 0',
                 border: isCurrent
                   ? '2px solid #00ffcc'
                   : unlocked
@@ -1307,9 +1727,12 @@ function LevelSelectScreen({ onStart, onBack }: { onStart: (id: number) => void;
                     : 'none',
               }}
             >
+              {/* Миниатюра-превью */}
+              <LevelPreview levelId={info.id} />
+
               {/* Замок для заблокированных */}
               {!unlocked && (
-                <div style={{ fontSize: 32, color: '#555', marginBottom: 4 }}>&#128274;</div>
+                <div style={{ fontSize: 24, color: '#555', marginBottom: 2 }}>&#128274;</div>
               )}
 
               {/* Звезда за победу над боссом */}

@@ -26,6 +26,10 @@ export class Player {
   alive = true;
   invincibleTimer = 0;
 
+  // Визуальные эффекты
+  squashTimer = 0;
+  private trail: Array<{ x: number; y: number }> = [];
+
   constructor(x = 100, hp = 3) {
     this.x = x;
     this.y = GROUND_Y - ENTITY_SIZE;
@@ -96,16 +100,43 @@ export class Player {
     return this.shieldTimer > 0;
   }
 
+  /** Вызвать при приземлении для эффекта squash-stretch. */
+  triggerLanding(): void {
+    this.squashTimer = 8;
+  }
+
   update(): void {
     if (this.shieldTimer > 0) this.shieldTimer--;
     if (this.rocketTimer > 0) this.rocketTimer--;
     if (this.invincibleTimer > 0) this.invincibleTimer--;
     if (this.shootCooldown > 0) this.shootCooldown--;
+    if (this.squashTimer > 0) this.squashTimer--;
+
+    // Обновление трейла (запоминаем последние 5 позиций)
+    this.trail.push({ x: this.x, y: this.y });
+    if (this.trail.length > 5) this.trail.shift();
   }
 
   draw(ctx: CanvasRenderingContext2D, frame: number): void {
     if (!this.alive) return;
     if (this.invincibleTimer > 0 && frame % 4 < 2) return; // Мерцание
+
+    // === Трейл (затухающие полупрозрачные квадраты) ===
+    if (!this.isRocketMode()) {
+      for (let i = 0; i < this.trail.length - 1; i++) {
+        const trailPos = this.trail[i];
+        const alpha = ((i + 1) / this.trail.length) * 0.2;
+        const size = this.width * (0.5 + (i / this.trail.length) * 0.4);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = COLORS.cube;
+        ctx.fillRect(
+          trailPos.x + (this.width - size) / 2,
+          trailPos.y + (this.height - size) / 2,
+          size, size,
+        );
+      }
+      ctx.globalAlpha = 1;
+    }
 
     ctx.save();
     ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
@@ -124,6 +155,12 @@ export class Player {
       ctx.fill();
       ctx.shadowBlur = 0;
     } else {
+      // === Squash-stretch при приземлении ===
+      const squashProgress = this.squashTimer / 8; // 1 → 0
+      const scaleX = 1 + squashProgress * 0.25;   // 1.25 → 1.0
+      const scaleY = 1 - squashProgress * 0.2;    // 0.8 → 1.0
+      ctx.scale(scaleX, scaleY);
+
       // Обычный куб
       ctx.rotate((this.rotation * Math.PI) / 180);
       ctx.shadowColor = COLORS.cubeGlow;
@@ -131,11 +168,16 @@ export class Player {
       ctx.fillStyle = COLORS.cube;
       ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
       ctx.shadowBlur = 0;
-      // Лицо
+
+      // Лицо — глаза смотрят в направлении движения
+      let eyeOffsetY = -5;
+      if (this.vy < -3) eyeOffsetY = -7; // Вверх при прыжке
+      else if (this.vy > 3) eyeOffsetY = -3; // Вниз при падении
+
       ctx.fillStyle = '#000';
-      ctx.fillRect(-7, -5, 4, 4);
-      ctx.fillRect(3, -5, 4, 4);
-      ctx.fillRect(-5, 3, 10, 2);
+      ctx.fillRect(-7, eyeOffsetY, 4, 4); // Левый глаз
+      ctx.fillRect(3, eyeOffsetY, 4, 4);  // Правый глаз
+      ctx.fillRect(-5, 3, 10, 2);         // Рот
     }
 
     ctx.restore();

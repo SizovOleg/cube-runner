@@ -20,7 +20,11 @@
       "Bash(git push:*)",
       "Bash(git fetch:*)",
       "Bash(git rebase:*)",
-      "Bash(pkill:*)"
+      "Bash(pkill:*)",
+      "Bash(curl:*)",
+      "Bash(git -C \"D:\\\\test\\\\cuberunner\" add -A)",
+      "Bash(git -C \"D:\\\\test\\\\cuberunner\" commit -m \"feat: level 3 Frost King, visual polish all levels, animated menu\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\")",
+      "Bash(git -C \"D:\\\\test\\\\cuberunner\" push origin main)"
     ]
   }
 }
