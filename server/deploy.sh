@@ -4,7 +4,7 @@
 
 set -e
 
-SERVER="root@188.120.229.244"
+SERVER="root@152.53.138.158"
 REMOTE_PATH="/var/www/games/cube-runner"
 
 echo "🔨 Сборка проекта..."
@@ -14,4 +14,4 @@ echo "📦 Загрузка на сервер..."
 scp -r dist/* "$SERVER:$REMOTE_PATH/"
 
 echo "✅ Деплой завершён!"
-echo "🎮 http://188.120.229.244/games/cube-runner/"
+echo "🎮 https://earthfrom.space/games/cube-runner/"

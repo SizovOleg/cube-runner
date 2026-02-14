@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "lint": "eslint src --ext .ts,.tsx",
     "test": "vitest",
-    "deploy": "npm run build && scp -r dist/* root@188.120.229.244:/var/www/games/cube-runner/"
+    "deploy": "npm run build && scp -r dist/* root@152.53.138.158:/var/www/games/cube-runner/"
   },
   "dependencies": {
     "react": "^18.2.0",

@@ -8,7 +8,7 @@
 - **Runtime**: React 18 + TypeScript
 - **Рендеринг**: HTML5 Canvas 2D (НЕ WebGL, НЕ Pixi.js)
 - **Сборка**: Vite
-- **Деплой**: статический билд → nginx на VPS (188.120.229.244)
+- **Деплой**: статический билд → nginx на VPS (152.53.138.158) → https://earthfrom.space/games/cube-runner/
 - **Тесты**: Vitest
 
 ## Архитектура
