@@ -25,16 +25,31 @@ export class Player {
   // Состояние
   alive = true;
   invincibleTimer = 0;
+  corridorMode = false;
 
   // Визуальные эффекты
   squashTimer = 0;
   private trail: Array<{ x: number; y: number }> = [];
 
-  constructor(x = 100, hp = 3) {
+  // Скин
+  skinColor: string;
+  skinGlow: string;
+
+  constructor(x = 100, hp = 3, skinColor?: string) {
     this.x = x;
     this.y = GROUND_Y - ENTITY_SIZE;
     this.hp = hp;
     this.maxHP = hp;
+    this.skinColor = skinColor || COLORS.cube;
+    this.skinGlow = Player.hexToGlow(this.skinColor);
+  }
+
+  /** Конвертирует hex-цвет в rgba для glow-эффекта */
+  static hexToGlow(hex: string): string {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r},${g},${b},0.4)`;
   }
 
   jump(): void {
@@ -122,13 +137,13 @@ export class Player {
     if (this.invincibleTimer > 0 && frame % 4 < 2) return; // Мерцание
 
     // === Трейл (затухающие полупрозрачные квадраты) ===
-    if (!this.isRocketMode()) {
+    if (!this.isRocketMode() && !this.corridorMode) {
       for (let i = 0; i < this.trail.length - 1; i++) {
         const trailPos = this.trail[i];
         const alpha = ((i + 1) / this.trail.length) * 0.2;
         const size = this.width * (0.5 + (i / this.trail.length) * 0.4);
         ctx.globalAlpha = alpha;
-        ctx.fillStyle = COLORS.cube;
+        ctx.fillStyle = this.skinColor;
         ctx.fillRect(
           trailPos.x + (this.width - size) / 2,
           trailPos.y + (this.height - size) / 2,
@@ -141,8 +156,8 @@ export class Player {
     ctx.save();
     ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
 
-    if (this.isRocketMode()) {
-      // Режим ракеты
+    if (this.isRocketMode() || this.corridorMode) {
+      // Режим ракеты / коридора
       ctx.rotate(frame * 0.3);
       ctx.shadowColor = COLORS.rocket;
       ctx.shadowBlur = 20;
@@ -163,9 +178,9 @@ export class Player {
 
       // Обычный куб
       ctx.rotate((this.rotation * Math.PI) / 180);
-      ctx.shadowColor = COLORS.cubeGlow;
+      ctx.shadowColor = this.skinGlow;
       ctx.shadowBlur = 15;
-      ctx.fillStyle = COLORS.cube;
+      ctx.fillStyle = this.skinColor;
       ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
       ctx.shadowBlur = 0;
 

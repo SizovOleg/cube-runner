@@ -56,6 +56,27 @@ export const POWERUP_DURATION: Partial<Record<PowerupType, number>> = {
   rocket: 180,
 };
 
+// Скины
+export type SkinId = 'green' | 'gold' | 'blue' | 'pink' | 'white' | 'orange';
+
+export const SKIN_COLORS: Record<SkinId, string> = {
+  green: '#00ff88',
+  gold: '#ffd700',
+  blue: '#0088ff',
+  pink: '#ff69b4',
+  white: '#ffffff',
+  orange: '#ff6600',
+};
+
+export const SKIN_NAMES: Record<SkinId, string> = {
+  green: 'Неон',
+  gold: 'Золото',
+  blue: 'Сапфир',
+  pink: 'Розовый',
+  white: 'Алмаз',
+  orange: 'Огонь',
+};
+
 // Уровни
 export const LEVEL_BOSS_ARENA_WIDTH = 600;
 export const BOSS_INTRO_DURATION = 120; // frames

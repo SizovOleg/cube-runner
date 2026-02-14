@@ -6,10 +6,12 @@ import {
   BULLET_SPEED, SHOOT_COOLDOWN, JUMP_FORCE,
   POWERUP_COLORS, POWERUP_LABELS, PowerupType,
   LEVEL_BOSS_ARENA_WIDTH, BOSS_INTRO_DURATION,
+  SKIN_COLORS, SKIN_NAMES, SkinId,
 } from '@utils/constants';
 import { Player } from '@entities/Player';
 import { Enemy } from '@entities/Enemy';
 import { Powerup } from '@entities/Powerup';
+import { Cage } from '@entities/Cage';
 import { BossGuardian } from '@entities/bosses/Boss1_Guardian';
 import { BossCrusher } from '@entities/bosses/Boss2_Crusher';
 import { BossFrostKing } from '@entities/bosses/Boss3_FrostKing';
@@ -21,8 +23,8 @@ import { applyGravity, clampToGround, landingCollision, aabbCollision, stompChec
 import level1 from '@levels/data/level1';
 import level2 from '@levels/data/level2';
 import level3 from '@levels/data/level3';
-import { LevelData, ObstacleData } from '@levels/types';
-import { loadProgress, saveLevelComplete, getMaxUnlockedLevel } from '@utils/storage';
+import { LevelData, ObstacleData, RocketCorridorData } from '@levels/types';
+import { loadProgress, saveLevelComplete, getMaxUnlockedLevel, unlockSkin, setCurrentSkin, getCurrentSkinColor } from '@utils/storage';
 
 // --- Конфиг уровней для экрана выбора ---
 const LEVEL_INFO: Array<{ id: number; name: string; bossName: string }> = [
@@ -292,6 +294,122 @@ function drawObstacles(ctx: CanvasRenderingContext2D, obstacles: readonly Obstac
   }
 }
 
+function drawCorridor(ctx: CanvasRenderingContext2D, corridor: RocketCorridorData, camera: Camera, frame: number): void {
+  const CORRIDOR_GAP = 120;
+  const startScreen = camera.worldToScreen(corridor.startX);
+  const endScreen = camera.worldToScreen(corridor.endX);
+
+  // Отсечение: если коридор за пределами экрана
+  if (endScreen < -200 || startScreen > CANVAS_WIDTH + 200) return;
+
+  // === Предупреждающие полосы (200px перед входом) ===
+  const warnStart = camera.worldToScreen(corridor.startX - 200);
+  const warnEnd = startScreen;
+  if (warnEnd > 0 && warnStart < CANVAS_WIDTH) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(Math.max(0, warnStart), 0, Math.min(warnEnd, CANVAS_WIDTH) - Math.max(0, warnStart), GROUND_Y);
+    ctx.clip();
+
+    const stripeWidth = 30;
+    const offset = (frame * 0.5) % (stripeWidth * 2);
+    ctx.globalAlpha = 0.3;
+    for (let sx = warnStart - stripeWidth * 4 - offset; sx < warnEnd + stripeWidth * 2; sx += stripeWidth * 2) {
+      ctx.fillStyle = '#ffcc00';
+      ctx.beginPath();
+      ctx.moveTo(sx, 0);
+      ctx.lineTo(sx + stripeWidth, 0);
+      ctx.lineTo(sx + stripeWidth - GROUND_Y * 0.5, GROUND_Y);
+      ctx.lineTo(sx - GROUND_Y * 0.5, GROUND_Y);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    // Текст WARNING
+    ctx.globalAlpha = 0.5 + Math.sin(frame * 0.1) * 0.3;
+    ctx.fillStyle = '#ffcc00';
+    ctx.font = 'bold 16px monospace';
+    ctx.textAlign = 'center';
+    const textX = (warnStart + warnEnd) / 2;
+    if (textX > 0 && textX < CANVAS_WIDTH) {
+      ctx.fillText('⚠ CORRIDOR ⚠', textX, 60);
+    }
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'left';
+  }
+
+  // === Стены и шипы коридора ===
+  const drawStart = Math.max(0, startScreen);
+  const drawEnd = Math.min(CANVAS_WIDTH, endScreen);
+  if (drawEnd <= drawStart) return;
+
+  // Рисуем по колонкам шириной 40px
+  for (let wx = corridor.startX; wx < corridor.endX; wx += 40) {
+    const sx = camera.worldToScreen(wx);
+    if (sx > CANVAS_WIDTH + 40 || sx < -40) continue;
+
+    const gapCenter = 170 + Math.sin(wx * 0.004) * 80;
+    const ceilingY = gapCenter - CORRIDOR_GAP / 2;
+    const floorY = gapCenter + CORRIDOR_GAP / 2;
+
+    // Стена сверху (тёмная)
+    ctx.fillStyle = '#1a0a2e';
+    ctx.fillRect(sx, 0, 42, ceilingY);
+
+    // Стена снизу (тёмная)
+    ctx.fillStyle = '#1a0a2e';
+    ctx.fillRect(sx, floorY, 42, GROUND_Y - floorY);
+
+    // Шипы с потолка (вниз)
+    ctx.fillStyle = COLORS.spike;
+    ctx.shadowColor = COLORS.spike;
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.moveTo(sx, ceilingY - 5);
+    ctx.lineTo(sx + 20, ceilingY + 15);
+    ctx.lineTo(sx + 40, ceilingY - 5);
+    ctx.closePath();
+    ctx.fill();
+
+    // Шипы с пола (вверх)
+    ctx.beginPath();
+    ctx.moveTo(sx, floorY + 5);
+    ctx.lineTo(sx + 20, floorY - 15);
+    ctx.lineTo(sx + 40, floorY + 5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // Граница входа (красная линия)
+  if (startScreen > -5 && startScreen < CANVAS_WIDTH + 5) {
+    ctx.strokeStyle = COLORS.spike;
+    ctx.shadowColor = COLORS.spike;
+    ctx.shadowBlur = 10;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(startScreen, 0);
+    ctx.lineTo(startScreen, GROUND_Y);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  // Граница выхода (зелёная линия)
+  if (endScreen > -5 && endScreen < CANVAS_WIDTH + 5) {
+    ctx.strokeStyle = '#00ff88';
+    ctx.shadowColor = '#00ff88';
+    ctx.shadowBlur = 10;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(endScreen, 0);
+    ctx.lineTo(endScreen, GROUND_Y);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+}
+
 function drawBullets(ctx: CanvasRenderingContext2D, bullets: Bullet[]): void {
   ctx.fillStyle = COLORS.bullet;
   ctx.shadowColor = COLORS.bullet;
@@ -376,13 +494,15 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
     inputRef.current = input;
 
     const levelData = LEVELS[levelId] ?? level1;
-    const player = new Player(100, 3);
+    const skinColor = getCurrentSkinColor();
+    const player = new Player(100, 3, skinColor);
     const camera = new Camera();
     const particles = new ParticleSystem();
     const obstacles = levelData.obstacles;
     const enemies = createEnemies(levelData);
     const powerups = createPowerups(levelData);
     const movingPlatforms = createMovingPlatforms(levelData);
+    const cages = (levelData.cages || []).map(c => new Cage(c.x, c.y, c.skinId));
     const bullets: Bullet[] = [];
     const enemyBullets: EnemyBullet[] = [];
     const bombs: BombProjectile[] = [];
@@ -407,6 +527,10 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
     let muzzleFlash = 0;
     let running = true;
     let invUpdateTick = 0;
+
+    // Ракетный коридор
+    const corridor = levelData.rocketCorridor;
+    let corridorMode = false;
 
     const loop = () => {
       if (!running) return;
@@ -464,8 +588,27 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
         player.x = arenaX + 50;
       }
 
-      // === Режим ракеты ===
-      if (player.isRocketMode()) {
+      // === Определение ракетного коридора ===
+      if (corridor && bossPhase === 'none') {
+        const wasInCorridor = corridorMode;
+        corridorMode = player.x >= corridor.startX && player.x < corridor.endX;
+        player.corridorMode = corridorMode;
+        if (!wasInCorridor && corridorMode) {
+          // Вход в коридор — подъём
+          player.vy = -2;
+          player.onGround = false;
+        }
+        if (wasInCorridor && !corridorMode && player.x >= corridor.endX) {
+          // Выход из коридора — приземление
+          player.y = GROUND_Y - player.height;
+          player.vy = 0;
+          player.onGround = true;
+          player.corridorMode = false;
+        }
+      }
+
+      // === Режим ракеты / коридора ===
+      if (player.isRocketMode() || corridorMode) {
         player.x += speed * 1.5;
         if (inp.jump) {
           player.vy = -4;
@@ -478,7 +621,8 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
           player.y = GROUND_Y - player.height;
           player.vy = 0;
         }
-        if (inp.shoot) {
+        // Стрельба отключена в коридоре
+        if (!corridorMode && inp.shoot) {
           bullets.push({
             x: player.x + ENTITY_SIZE + 5,
             y: player.y + ENTITY_SIZE / 2 - 3,
@@ -628,6 +772,20 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
         }
       }
 
+      // Клетки со скинами
+      for (const cage of cages) {
+        if (cage.collected) continue;
+        const cageHitbox = { x: cage.x, y: cage.y, width: cage.width, height: cage.height };
+        // Разбить клетку: прыжок сверху (как stomp)
+        if (aabbCollision(player, cageHitbox) && player.vy > 0 && player.y + player.height - player.vy <= cage.y + 10) {
+          cage.collected = true;
+          unlockSkin(cage.skinId);
+          player.vy = JUMP_FORCE * 0.6; // Отскок
+          const sx = camera.worldToScreen(cage.x);
+          particles.burst(sx + cage.width / 2, cage.y + cage.height / 2, SKIN_COLORS[cage.skinId], 20);
+        }
+      }
+
       // Враги
       for (const enemy of enemies) {
         enemy.update(player.x);
@@ -654,10 +812,10 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
         // Попадание вражеской пули в игрока
         if (aabbCollision(player, enemyBullets[i])) {
           enemyBullets.splice(i, 1);
-          if (!player.isRocketMode()) {
+          if (!player.isRocketMode() && !corridorMode) {
             const died = player.takeDamage(1);
             if (died) {
-              particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, COLORS.cube, 15);
+              particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, skinColor, 15);
               setDeath({ score: Math.floor(camera.x / 10), kills });
               return;
             }
@@ -720,7 +878,7 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
             // Боковое столкновение с боссом
             const died = player.takeDamage(1);
             if (died) {
-              particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, COLORS.cube, 15);
+              particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, skinColor, 15);
               setDeath({ score: Math.floor(camera.x / 10), kills });
               return;
             }
@@ -735,7 +893,7 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
           if (aabbCollision(player, proj)) {
             const died = player.takeDamage(proj.damage);
             if (died) {
-              particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, COLORS.cube, 15);
+              particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, skinColor, 15);
               setDeath({ score: Math.floor(camera.x / 10), kills });
               return;
             }
@@ -749,7 +907,7 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
           if (player.y + player.height >= GROUND_Y - 5 && distToCenter <= sw.radius + 15 && distToCenter >= sw.radius - 15) {
             const died = player.takeDamage(1);
             if (died) {
-              particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, COLORS.cube, 15);
+              particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, skinColor, 15);
               setDeath({ score: Math.floor(camera.x / 10), kills });
               return;
             }
@@ -780,7 +938,7 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
         if (!enemy.alive) continue;
         if (!aabbCollision(player, enemy)) continue;
         const ex = camera.worldToScreen(enemy.x);
-        if (player.isRocketMode()) {
+        if (player.isRocketMode() || corridorMode) {
           enemy.takeDamage(10);
           kills++;
           particles.burst(ex + ENTITY_SIZE / 2, enemy.y + ENTITY_SIZE / 2, COLORS.rocket, 15);
@@ -793,15 +951,15 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
         } else {
           const died = player.takeDamage(1);
           if (died) {
-            particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, COLORS.cube, 15);
+            particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, skinColor, 15);
             setDeath({ score: Math.floor(camera.x / 10), kills });
             return;
           }
         }
       }
 
-      // Шипы
-      if (!player.isRocketMode()) {
+      // Шипы (пропускаются в режиме ракеты и коридора)
+      if (!player.isRocketMode() && !corridorMode) {
         for (const obs of obstacles) {
           if (obs.type !== 'spike') continue;
           const spikeHitbox = { x: obs.x + 5, y: obs.y + 5, width: obs.width - 10, height: obs.height - 5 };
@@ -816,8 +974,39 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
         }
       }
 
+      // Коллизия с шипами коридора (процедурные)
+      if (corridorMode && corridor) {
+        const CORRIDOR_GAP = 120;
+        const playerCX = player.x + player.width / 2;
+        const gapCenter = 170 + Math.sin(playerCX * 0.004) * 80;
+        const ceilingBottom = gapCenter - CORRIDOR_GAP / 2;
+        const floorTop = gapCenter + CORRIDOR_GAP / 2;
+        if (player.y < ceilingBottom) {
+          const died = player.takeDamage(1);
+          if (died) {
+            particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, COLORS.spike, 15);
+            setDeath({ score: Math.floor(camera.x / 10), kills });
+            return;
+          }
+          player.y = ceilingBottom;
+          player.vy = 1;
+        }
+        if (player.y + player.height > floorTop) {
+          const died = player.takeDamage(1);
+          if (died) {
+            particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, COLORS.spike, 15);
+            setDeath({ score: Math.floor(camera.x / 10), kills });
+            return;
+          }
+          player.y = floorTop - player.height;
+          player.vy = -1;
+        }
+      }
+
       player.rotation += speed * 2;
       player.update();
+      // Заморозить rocketTimer в коридоре
+      if (corridorMode && player.rocketTimer > 0) player.rocketTimer++;
       camera.update(player.x);
       particles.update();
 
@@ -896,6 +1085,11 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
       // Препятствия (статические + движущиеся)
       drawObstacles(ctx, obstacles, movingPlatforms, camera);
 
+      // Ракетный коридор
+      if (corridor) {
+        drawCorridor(ctx, corridor, camera, frame);
+      }
+
       // Стены арены (если в босс-зоне)
       if (bossPhase !== 'none') {
         const arenaWallColor = levelId === 3 ? '#00aaff' : levelId === 2 ? '#8800cc' : '#ff0044';
@@ -908,6 +1102,14 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
         const sx = camera.worldToScreen(pw.x);
         if (sx < -100 || sx > CANVAS_WIDTH + 100) continue;
         pw.draw(ctx, sx, frame);
+      }
+
+      // Клетки со скинами (culling)
+      for (const cage of cages) {
+        if (cage.collected) continue;
+        const cx = camera.worldToScreen(cage.x);
+        if (cx < -100 || cx > CANVAS_WIDTH + 100) continue;
+        cage.draw(ctx, cx, frame);
       }
 
       // Враги (culling)
@@ -960,8 +1162,8 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
         ctx.globalAlpha = 1;
       }
 
-      // Огненный след ракеты
-      if (player.isRocketMode()) {
+      // Огненный след ракеты (обычный режим + коридор)
+      if (player.isRocketMode() || corridorMode) {
         for (let ti = 0; ti < 3; ti++) {
           const trailX = screenX - 5 - Math.random() * 15;
           const trailY = player.y + ENTITY_SIZE / 2 + (Math.random() - 0.5) * 12;
@@ -975,7 +1177,7 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
       }
 
       // Частицы полёта (обычный режим)
-      if (!player.isRocketMode() && inp.jump && !player.onGround) {
+      if (!player.isRocketMode() && !corridorMode && inp.jump && !player.onGround) {
         const px = screenX + Math.random() * ENTITY_SIZE;
         const py = player.y + ENTITY_SIZE + Math.random() * 5;
         ctx.globalAlpha = 0.5;
@@ -1090,8 +1292,8 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
       ctx.font = 'bold 18px monospace';
       ctx.fillText('HP:', 20, hpLabelY);
       for (let i = 0; i < player.maxHP; i++) {
-        ctx.fillStyle = i < player.hp ? COLORS.cube : '#333';
-        ctx.shadowColor = i < player.hp ? COLORS.cubeGlow : 'transparent';
+        ctx.fillStyle = i < player.hp ? skinColor : '#333';
+        ctx.shadowColor = i < player.hp ? player.skinGlow : 'transparent';
         ctx.shadowBlur = i < player.hp ? 8 : 0;
         ctx.fillRect(70 + i * 22, hpY, 16, 16);
       }
@@ -1124,8 +1326,23 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
         ctx.fillText(String(si + 1), slotX + 2, slotY + 26);
       }
 
-      // Таймер-бар Shield / Rocket
-      if (player.isRocketMode()) {
+      // Таймер-бар Shield / Rocket / Corridor
+      if (corridorMode && corridor) {
+        const barW = 100;
+        const ratio = (player.x - corridor.startX) / (corridor.endX - corridor.startX);
+        ctx.fillStyle = '#330011';
+        ctx.fillRect(CANVAS_WIDTH / 2 - barW / 2, 8, barW, 8);
+        ctx.fillStyle = COLORS.spike;
+        ctx.shadowColor = COLORS.spike;
+        ctx.shadowBlur = 6;
+        ctx.fillRect(CANVAS_WIDTH / 2 - barW / 2, 8, barW * Math.min(ratio, 1), 8);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#fff';
+        ctx.font = '8px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('⚠ CORRIDOR', CANVAS_WIDTH / 2, 6);
+        ctx.textAlign = 'left';
+      } else if (player.isRocketMode()) {
         const barW = 80;
         const ratio = player.rocketTimer / 180;
         ctx.fillStyle = '#330033';
@@ -1229,7 +1446,7 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
       >
         {/* Звезда победы */}
         <div style={{ fontSize: 48, marginBottom: 4 }}>&#9733;</div>
-        <div style={{ fontSize: 36, fontWeight: 'bold', color: COLORS.cube, textShadow: '0 0 30px rgba(0,255,136,0.5)', marginBottom: 12 }}>
+        <div style={{ fontSize: 36, fontWeight: 'bold', color: getCurrentSkinColor(), textShadow: '0 0 30px rgba(255,255,255,0.3)', marginBottom: 12 }}>
           LEVEL COMPLETE
         </div>
         <div style={{ color: '#aaa', fontSize: 14, marginBottom: 8 }}>
@@ -1377,6 +1594,10 @@ export default function App() {
     setScreen('levelSelect');
   }, []);
 
+  const goToSkins = useCallback(() => {
+    setScreen('skins');
+  }, []);
+
   const restartLevel = useCallback(() => {
     setGameKey((k) => k + 1);
   }, []);
@@ -1405,10 +1626,13 @@ export default function App() {
       }}
     >
       {/* === ГЛАВНОЕ МЕНЮ === */}
-      {screen === 'menu' && <MenuScreen onPlay={handlePlay} onLevelSelect={goToLevelSelect} />}
+      {screen === 'menu' && <MenuScreen onPlay={handlePlay} onLevelSelect={goToLevelSelect} onSkins={goToSkins} />}
 
       {/* === ВЫБОР УРОВНЯ === */}
       {screen === 'levelSelect' && <LevelSelectScreen onStart={startLevel} onBack={goToMenu} />}
+
+      {/* === СКИНЫ === */}
+      {screen === 'skins' && <SkinSelectScreen onBack={goToMenu} />}
 
       {/* === ИГРА === */}
       {screen === 'playing' && (
@@ -1426,7 +1650,7 @@ export default function App() {
 
 // --- Animated Menu Screen ---
 
-function MenuScreen({ onPlay, onLevelSelect }: { onPlay: () => void; onLevelSelect: () => void }) {
+function MenuScreen({ onPlay, onLevelSelect, onSkins }: { onPlay: () => void; onLevelSelect: () => void; onSkins: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
 
@@ -1594,6 +1818,9 @@ function MenuScreen({ onPlay, onLevelSelect }: { onPlay: () => void; onLevelSele
         <button onClick={onLevelSelect} style={neonBtnStyle('#3355ff')}>
           Выбор уровня
         </button>
+        <button onClick={onSkins} style={neonBtnStyle('#cc8800')}>
+          Скины
+        </button>
 
         <div style={{
           color: '#6666aa', marginTop: 20, fontSize: 11,
@@ -1692,29 +1919,23 @@ function LevelSelectScreen({ onStart, onBack }: { onStart: (id: number) => void;
 
       <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', justifyContent: 'center' }}>
         {LEVEL_INFO.map((info) => {
-          const unlocked = progress.unlockedLevels.includes(info.id);
           const bossDefeated = progress.bossesDefeated.includes(info.id);
           const bestScore = progress.bestScores[info.id];
-          const isCurrent = unlocked && !bossDefeated;
+          const isCurrent = !bossDefeated;
 
           return (
             <button
               key={info.id}
-              onClick={() => unlocked && onStart(info.id)}
-              disabled={!unlocked}
+              onClick={() => onStart(info.id)}
               style={{
                 width: 160, height: 200, borderRadius: 16, padding: '8px 0 0 0',
                 border: isCurrent
                   ? '2px solid #00ffcc'
-                  : unlocked
-                    ? '2px solid #3355ff'
-                    : '2px solid #333',
-                background: unlocked
-                  ? isCurrent
-                    ? 'rgba(0,255,204,0.08)'
-                    : 'rgba(51,85,255,0.06)'
-                  : 'rgba(30,30,30,0.5)',
-                cursor: unlocked ? 'pointer' : 'default',
+                  : '2px solid #3355ff',
+                background: isCurrent
+                  ? 'rgba(0,255,204,0.08)'
+                  : 'rgba(51,85,255,0.06)',
+                cursor: 'pointer',
                 fontFamily: 'monospace',
                 display: 'flex', flexDirection: 'column',
                 alignItems: 'center', justifyContent: 'center',
@@ -1722,18 +1943,11 @@ function LevelSelectScreen({ onStart, onBack }: { onStart: (id: number) => void;
                 transition: 'box-shadow 0.2s, border-color 0.2s',
                 boxShadow: isCurrent
                   ? '0 0 20px rgba(0,255,204,0.2)'
-                  : unlocked
-                    ? '0 0 10px rgba(51,85,255,0.15)'
-                    : 'none',
+                  : '0 0 10px rgba(51,85,255,0.15)',
               }}
             >
               {/* Миниатюра-превью */}
               <LevelPreview levelId={info.id} />
-
-              {/* Замок для заблокированных */}
-              {!unlocked && (
-                <div style={{ fontSize: 24, color: '#555', marginBottom: 2 }}>&#128274;</div>
-              )}
 
               {/* Звезда за победу над боссом */}
               {bossDefeated && (
@@ -1748,8 +1962,8 @@ function LevelSelectScreen({ onStart, onBack }: { onStart: (id: number) => void;
 
               {/* Номер уровня */}
               <div style={{
-                fontSize: unlocked ? 32 : 24, fontWeight: 'bold',
-                color: unlocked ? '#fff' : '#444',
+                fontSize: 32, fontWeight: 'bold',
+                color: '#fff',
                 marginBottom: 4,
               }}>
                 {info.id}
@@ -1757,7 +1971,7 @@ function LevelSelectScreen({ onStart, onBack }: { onStart: (id: number) => void;
 
               {/* Имя уровня */}
               <div style={{
-                fontSize: 12, color: unlocked ? '#aaa' : '#444',
+                fontSize: 12, color: '#aaa',
                 marginBottom: 2,
               }}>
                 {info.name}
@@ -1765,7 +1979,7 @@ function LevelSelectScreen({ onStart, onBack }: { onStart: (id: number) => void;
 
               {/* Имя босса */}
               <div style={{
-                fontSize: 10, color: unlocked ? '#ff4466' : '#333',
+                fontSize: 10, color: '#ff4466',
               }}>
                 Boss: {info.bossName}
               </div>
@@ -1796,6 +2010,125 @@ function LevelSelectScreen({ onStart, onBack }: { onStart: (id: number) => void;
         onClick={onBack}
         style={{
           marginTop: 28, padding: '10px 28px', background: 'transparent',
+          border: '1px solid #555', borderRadius: 8, color: '#888',
+          cursor: 'pointer', fontFamily: 'monospace', fontSize: 14,
+        }}
+      >
+        Назад
+      </button>
+    </div>
+  );
+}
+
+// --- Skin Select Screen ---
+
+const ALL_SKINS: SkinId[] = ['green', 'gold', 'blue', 'pink', 'white', 'orange'];
+
+function SkinSelectScreen({ onBack }: { onBack: () => void }) {
+  const [progress, setProgress] = useState(() => loadProgress());
+
+  const handleSelect = (skinId: SkinId) => {
+    if (!progress.unlockedSkins.includes(skinId)) return;
+    setCurrentSkin(skinId);
+    setProgress(loadProgress());
+  };
+
+  return (
+    <div style={{
+      width: CANVAS_WIDTH, maxWidth: '100%', height: CANVAS_HEIGHT,
+      background: COLORS.bg, display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', borderRadius: 12,
+      fontFamily: 'monospace', position: 'relative',
+    }}>
+      <div style={{
+        fontSize: 28, fontWeight: 'bold', color: '#fff', marginBottom: 24,
+        textShadow: '0 0 15px rgba(255,255,255,0.2)',
+      }}>
+        Скины
+      </div>
+
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 500 }}>
+        {ALL_SKINS.map((skinId) => {
+          const unlocked = progress.unlockedSkins.includes(skinId);
+          const isActive = progress.currentSkin === skinId;
+          const color = SKIN_COLORS[skinId];
+          const name = SKIN_NAMES[skinId];
+
+          return (
+            <button
+              key={skinId}
+              onClick={() => handleSelect(skinId)}
+              style={{
+                width: 80, height: 100, borderRadius: 12, padding: 0,
+                border: isActive
+                  ? '2px solid #00ffcc'
+                  : unlocked
+                    ? '2px solid #555'
+                    : '2px solid #333',
+                background: isActive
+                  ? 'rgba(0,255,204,0.08)'
+                  : 'rgba(30,30,30,0.5)',
+                cursor: unlocked ? 'pointer' : 'default',
+                fontFamily: 'monospace',
+                display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center',
+                boxShadow: isActive ? '0 0 15px rgba(0,255,204,0.3)' : 'none',
+              }}
+            >
+              {/* Превью кубика */}
+              <div style={{
+                width: 36, height: 36, borderRadius: 4,
+                background: unlocked ? color : '#444',
+                boxShadow: unlocked ? `0 0 12px ${color}` : 'none',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                marginBottom: 6,
+              }}>
+                {!unlocked && (
+                  <span style={{ fontSize: 16, color: '#666' }}>&#128274;</span>
+                )}
+                {unlocked && (
+                  <div style={{ position: 'relative', width: 20, height: 20 }}>
+                    <div style={{
+                      position: 'absolute', left: 2, top: 4,
+                      width: 4, height: 4, background: '#000', borderRadius: 1,
+                    }} />
+                    <div style={{
+                      position: 'absolute', right: 2, top: 4,
+                      width: 4, height: 4, background: '#000', borderRadius: 1,
+                    }} />
+                    <div style={{
+                      position: 'absolute', left: 4, bottom: 3,
+                      width: 12, height: 2, background: '#000', borderRadius: 1,
+                    }} />
+                  </div>
+                )}
+              </div>
+
+              {/* Имя скина */}
+              <div style={{
+                fontSize: 10, color: unlocked ? '#ccc' : '#555',
+                fontWeight: isActive ? 'bold' : 'normal',
+              }}>
+                {name}
+              </div>
+
+              {/* Метка "активен" */}
+              {isActive && (
+                <div style={{
+                  fontSize: 8, color: '#00ffcc', marginTop: 2,
+                }}>
+                  &#9679;
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <button
+        onClick={onBack}
+        style={{
+          marginTop: 24, padding: '10px 28px', background: 'transparent',
           border: '1px solid #555', borderRadius: 8, color: '#888',
           cursor: 'pointer', fontFamily: 'monospace', fontSize: 14,
         }}

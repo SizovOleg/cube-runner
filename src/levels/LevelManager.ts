@@ -59,6 +59,8 @@ export class LevelManager {
       bestScores: {},
       totalKills: 0,
       bossesDefeated: [],
+      unlockedSkins: ['green'],
+      currentSkin: 'green',
     };
     saveProgress(this.progress);
   }

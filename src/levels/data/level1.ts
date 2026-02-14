@@ -14,29 +14,52 @@ const level1: LevelData = {
   obstacles: [
     // Секция 1: Простые шипы (обучение прыжку)
     { x: 600, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 850, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
     { x: 1100, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 1300, y: GROUND_Y - 60, width: 70, height: 15, type: 'platform' },
     { x: 1500, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 1750, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
 
     // Секция 2: Платформы + шипы
     { x: 2000, y: GROUND_Y - 70, width: 80, height: 15, type: 'platform' },
     { x: 2300, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
     { x: 2500, y: GROUND_Y - 90, width: 70, height: 15, type: 'platform' },
+    { x: 2750, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 2950, y: GROUND_Y - 60, width: 70, height: 15, type: 'platform' },
 
     // Секция 3: Двойные шипы
     { x: 3200, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
     { x: 3260, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 3500, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 3700, y: GROUND_Y - 70, width: 80, height: 15, type: 'platform' },
+    { x: 3900, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
 
     // Секция 4: Платформенный лабиринт
     { x: 4000, y: GROUND_Y - 60, width: 100, height: 15, type: 'platform' },
     { x: 4200, y: GROUND_Y - 110, width: 80, height: 15, type: 'platform' },
     { x: 4500, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
     { x: 4700, y: GROUND_Y - 70, width: 80, height: 15, type: 'platform' },
+    { x: 4950, y: GROUND_Y - 90, width: 70, height: 15, type: 'platform' },
+    { x: 5150, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 5200, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
 
     // Секция 5: Финальная полоса перед боссом
     { x: 5500, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
     { x: 5600, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
     { x: 5700, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
     { x: 5900, y: GROUND_Y - 80, width: 90, height: 15, type: 'platform' },
+    { x: 6200, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 6450, y: GROUND_Y - 60, width: 80, height: 15, type: 'platform' },
+    { x: 6700, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 6750, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    // (Ракетный коридор: 7000-8500 — препятствия убраны)
+    { x: 8600, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 8650, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 8900, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 9200, y: GROUND_Y - 70, width: 80, height: 15, type: 'platform' },
+    { x: 9500, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 9700, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 9950, y: GROUND_Y - 60, width: 70, height: 15, type: 'platform' },
   ],
 
   enemies: [
@@ -65,6 +88,13 @@ const level1: LevelData = {
     { x: 4600, y: GROUND_Y - 50, type: 'rocket' },
     { x: 5800, y: GROUND_Y - 60, type: 'shield' },
   ],
+
+  cages: [
+    { x: 2510, y: GROUND_Y - 130, skinId: 'gold' },
+    { x: 4960, y: GROUND_Y - 130, skinId: 'blue' },
+  ],
+
+  rocketCorridor: { startX: 7000, endX: 8500 },
 
   boss: {
     type: 'guardian',

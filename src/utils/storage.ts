@@ -1,26 +1,39 @@
-import { PlayerProgress } from '@levels/types';
+import { PlayerProgress, SkinId } from '@levels/types';
+import { SKIN_COLORS } from '@utils/constants';
 
 const STORAGE_KEY = 'cube-runner-progress';
 
 const DEFAULT_PROGRESS: PlayerProgress = {
-  unlockedLevels: [1],
+  unlockedLevels: [1, 2, 3],
   bestScores: {},
   totalKills: 0,
   bossesDefeated: [],
+  unlockedSkins: ['green'],
+  currentSkin: 'green',
 };
 
 export function loadProgress(): PlayerProgress {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_PROGRESS, unlockedLevels: [...DEFAULT_PROGRESS.unlockedLevels] };
+    if (!raw) return { ...DEFAULT_PROGRESS, unlockedLevels: [...DEFAULT_PROGRESS.unlockedLevels], unlockedSkins: [...DEFAULT_PROGRESS.unlockedSkins] };
     const parsed = JSON.parse(raw) as PlayerProgress;
     // Гарантируем что уровень 1 всегда доступен
     if (!parsed.unlockedLevels.includes(1)) {
       parsed.unlockedLevels.push(1);
     }
+    // Миграция: старые сохранения без скинов
+    if (!parsed.unlockedSkins) {
+      parsed.unlockedSkins = ['green'];
+    }
+    if (!parsed.currentSkin) {
+      parsed.currentSkin = 'green';
+    }
+    if (!parsed.unlockedSkins.includes('green')) {
+      parsed.unlockedSkins.push('green');
+    }
     return parsed;
   } catch {
-    return { ...DEFAULT_PROGRESS, unlockedLevels: [...DEFAULT_PROGRESS.unlockedLevels] };
+    return { ...DEFAULT_PROGRESS, unlockedLevels: [...DEFAULT_PROGRESS.unlockedLevels], unlockedSkins: [...DEFAULT_PROGRESS.unlockedSkins] };
   }
 }
 
@@ -75,4 +88,32 @@ export function saveLevelComplete(levelId: number, score: number, kills: number)
 export function getMaxUnlockedLevel(): number {
   const progress = loadProgress();
   return Math.max(...progress.unlockedLevels);
+}
+
+/**
+ * Разблокирует скин.
+ */
+export function unlockSkin(skinId: SkinId): void {
+  const progress = loadProgress();
+  if (!progress.unlockedSkins.includes(skinId)) {
+    progress.unlockedSkins.push(skinId);
+    saveProgress(progress);
+  }
+}
+
+/**
+ * Устанавливает текущий скин.
+ */
+export function setCurrentSkin(skinId: SkinId): void {
+  const progress = loadProgress();
+  progress.currentSkin = skinId;
+  saveProgress(progress);
+}
+
+/**
+ * Возвращает hex-цвет текущего скина.
+ */
+export function getCurrentSkinColor(): string {
+  const progress = loadProgress();
+  return SKIN_COLORS[progress.currentSkin] || SKIN_COLORS.green;
 }

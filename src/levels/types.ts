@@ -1,4 +1,13 @@
-import { PowerupType } from '@utils/constants';
+import { PowerupType, SkinId } from '@utils/constants';
+
+export type { SkinId };
+
+// Клетка со скином внутри
+export interface CageData {
+  x: number;
+  y: number;
+  skinId: SkinId;
+}
 
 // Базовый игровой объект
 export interface GameObject {
@@ -40,6 +49,12 @@ export interface PowerupData {
   type: PowerupType;
 }
 
+// Ракетный коридор
+export interface RocketCorridorData {
+  startX: number;
+  endX: number;
+}
+
 // Босс
 export interface BossData {
   type: string;
@@ -60,6 +75,10 @@ export interface LevelData {
   enemies: EnemyData[];
   powerups: PowerupData[];
   boss: BossData;
+  // Клетки со скинами (опционально)
+  cages?: CageData[];
+  // Ракетный коридор (опционально)
+  rocketCorridor?: RocketCorridorData;
   // Декорации (опционально)
   decorations?: Array<{
     x: number;
@@ -74,10 +93,12 @@ export interface PlayerProgress {
   bestScores: Record<number, number>;
   totalKills: number;
   bossesDefeated: number[];
+  unlockedSkins: SkinId[];
+  currentSkin: SkinId;
 }
 
 // Состояние игры
-export type GameScreen = 'menu' | 'levelSelect' | 'playing' | 'bossIntro' | 'bossFight' | 'levelComplete' | 'dead' | 'pause';
+export type GameScreen = 'menu' | 'levelSelect' | 'skins' | 'playing' | 'bossIntro' | 'bossFight' | 'levelComplete' | 'dead' | 'pause';
 
 export interface GameState {
   screen: GameScreen;
