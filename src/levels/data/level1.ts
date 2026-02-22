@@ -90,6 +90,36 @@ const level1: LevelData = {
     { x: 4960, y: GROUND_Y - 130, skinId: 'blue' },
   ],
 
+  coins: [
+    // Группа 1: обучающая (в линию над землёй)
+    { x: 400,  y: GROUND_Y - 50 },
+    { x: 460,  y: GROUND_Y - 50 },
+    { x: 520,  y: GROUND_Y - 50 },
+    // Группа 2: дуга через платформу
+    { x: 1300, y: GROUND_Y - 90 },
+    { x: 1360, y: GROUND_Y - 110 },
+    { x: 1420, y: GROUND_Y - 90 },
+    // Группа 3: над шипами (нужен прыжок)
+    { x: 2200, y: GROUND_Y - 80 },
+    { x: 2260, y: GROUND_Y - 100 },
+    { x: 2320, y: GROUND_Y - 80 },
+    // Группа 4: на платформе
+    { x: 3150, y: GROUND_Y - 100 },
+    { x: 3210, y: GROUND_Y - 100 },
+    { x: 3270, y: GROUND_Y - 100 },
+    // Группа 5: в воздухе (прыжок)
+    { x: 4700, y: GROUND_Y - 120 },
+    { x: 4760, y: GROUND_Y - 140 },
+    { x: 4820, y: GROUND_Y - 120 },
+    // Группа 6: перед коридором
+    { x: 6600, y: GROUND_Y - 60 },
+    { x: 6660, y: GROUND_Y - 60 },
+    { x: 6720, y: GROUND_Y - 60 },
+    // Группа 7: после коридора
+    { x: 9750, y: GROUND_Y - 60 },
+    { x: 9810, y: GROUND_Y - 60 },
+  ],
+
   rocketCorridor: {
     startX: 7000,
     endX: 9500,

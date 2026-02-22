@@ -80,3 +80,55 @@ export const SKIN_NAMES: Record<SkinId, string> = {
 // Уровни
 export const LEVEL_BOSS_ARENA_WIDTH = 600;
 export const BOSS_INTRO_DURATION = 120; // frames
+
+// Монеты
+export const COIN_RADIUS = 8;
+export const COIN_COLOR = '#ffdd00';
+export const COIN_GLOW = '#ffcc00';
+
+// Апгрейды (магазин)
+export type UpgradeType = 'magnet' | 'double_jump' | 'armor' | 'super_bullet';
+
+export interface UpgradeDef {
+  id: UpgradeType;
+  name: string;
+  desc: string;
+  cost: number;
+  color: string;
+  icon: string;
+}
+
+export const UPGRADES: UpgradeDef[] = [
+  {
+    id: 'magnet',
+    name: 'Магнит',
+    desc: 'Притягивает монеты и powerups\nс расстояния 150px. 30 сек.',
+    cost: 50,
+    color: '#44ddff',
+    icon: '🧲',
+  },
+  {
+    id: 'double_jump',
+    name: 'Двойной прыжок',
+    desc: 'Второй прыжок в воздухе.\nВесь уровень.',
+    cost: 80,
+    color: '#00ff88',
+    icon: '⬆️',
+  },
+  {
+    id: 'armor',
+    name: 'Броня',
+    desc: '+2 HP на уровень.',
+    cost: 100,
+    color: '#ff8800',
+    icon: '🛡',
+  },
+  {
+    id: 'super_bullet',
+    name: 'Суперпуля',
+    desc: 'Пули пробивают врагов насквозь.\n20 сек.',
+    cost: 60,
+    color: '#ff44ff',
+    icon: '⚡',
+  },
+];

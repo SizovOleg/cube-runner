@@ -1,6 +1,12 @@
-import { PowerupType, SkinId } from '@utils/constants';
+import { PowerupType, SkinId, UpgradeType } from '@utils/constants';
 
 export type { SkinId };
+
+// Монета на уровне
+export interface CoinData {
+  x: number;
+  y: number;
+}
 
 // Клетка со скином внутри
 export interface CageData {
@@ -101,6 +107,8 @@ export interface LevelData {
   enemies: EnemyData[];
   powerups: PowerupData[];
   boss: BossData;
+  // Монеты
+  coins?: CoinData[];
   // Клетки со скинами (опционально)
   cages?: CageData[];
   // Ракетный коридор (опционально)
@@ -121,10 +129,14 @@ export interface PlayerProgress {
   bossesDefeated: number[];
   unlockedSkins: SkinId[];
   currentSkin: SkinId;
+  // Монеты и апгрейды
+  coins: number;
+  ownedUpgrades: Record<UpgradeType, number>; // количество купленных
+  activeUpgrades: UpgradeType[]; // активированы перед началом уровня
 }
 
 // Состояние игры
-export type GameScreen = 'menu' | 'levelSelect' | 'skins' | 'playing' | 'bossIntro' | 'bossFight' | 'levelComplete' | 'dead' | 'pause';
+export type GameScreen = 'menu' | 'levelSelect' | 'skins' | 'shop' | 'upgrades' | 'playing' | 'bossIntro' | 'bossFight' | 'levelComplete' | 'dead' | 'pause';
 
 export interface GameState {
   screen: GameScreen;

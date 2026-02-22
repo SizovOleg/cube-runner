@@ -104,23 +104,35 @@ export class Enemy {
     return true;
   }
 
+  private static roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+    const rr = ctx as CanvasRenderingContext2D & { roundRect?: (...a: unknown[]) => void };
+    if (rr.roundRect) { rr.roundRect(x, y, w, h, r); return; }
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r);
+    ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+    ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r);
+    ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r);
+    ctx.closePath();
+  }
+
   draw(ctx: CanvasRenderingContext2D, screenX: number, frame: number): void {
     if (!this.alive) return;
 
     const color = this.type === 'armored' ? '#aa2222' : COLORS.enemy;
+    // Пульсирующее свечение (shadowBlur 8-15px по синусоиде)
+    const glowPulse = 8 + Math.sin(frame * 0.08) * 7;
 
-    // === Flying: крылья (рисуются ДО тела) ===
+    // === Flying: крылья ===
     if (this.type === 'flying') {
       const wingFlap = Math.sin(frame * 0.15) * 5;
-      ctx.fillStyle = 'rgba(255,100,100,0.5)';
-      // Левое крыло
+      ctx.fillStyle = 'rgba(255,100,100,0.4)';
       ctx.beginPath();
       ctx.moveTo(screenX, this.y + 8);
       ctx.lineTo(screenX - 10, this.y + 12 + wingFlap);
       ctx.lineTo(screenX, this.y + 20);
       ctx.closePath();
       ctx.fill();
-      // Правое крыло
       ctx.beginPath();
       ctx.moveTo(screenX + this.width, this.y + 8);
       ctx.lineTo(screenX + this.width + 10, this.y + 12 + wingFlap);
@@ -129,20 +141,31 @@ export class Enemy {
       ctx.fill();
     }
 
-    // Тело
-    ctx.fillStyle = color;
+    // Тело: градиент (светлее к центру сверху, темнее внизу) + скруглённые углы
+    const bodyGrad = ctx.createLinearGradient(screenX, this.y, screenX, this.y + this.height);
+    bodyGrad.addColorStop(0, color + 'ff');
+    bodyGrad.addColorStop(0.4, color + 'cc');
+    bodyGrad.addColorStop(1, color + '55');
+    ctx.fillStyle = bodyGrad;
     ctx.shadowColor = color;
-    ctx.shadowBlur = 10;
-    ctx.fillRect(screenX, this.y, this.width, this.height);
+    ctx.shadowBlur = glowPulse;
+    Enemy.roundRect(ctx, screenX, this.y, this.width, this.height, 4);
+    ctx.fill();
     ctx.shadowBlur = 0;
 
-    // === Armored: металлический блеск (горизонтальная линия-блик) ===
+    // Highlight (светлый верх)
+    ctx.globalAlpha = 0.2;
+    ctx.fillStyle = '#fff';
+    Enemy.roundRect(ctx, screenX + 2, this.y + 2, this.width - 4, 6, 3);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // === Armored: металлический блеск ===
     if (this.type === 'armored') {
       const shineY = (frame * 2) % (this.height + 20) - 10;
       if (shineY >= 0 && shineY < this.height - 2) {
         ctx.save();
-        ctx.beginPath();
-        ctx.rect(screenX, this.y, this.width, this.height);
+        Enemy.roundRect(ctx, screenX, this.y, this.width, this.height, 4);
         ctx.clip();
         ctx.globalAlpha = 0.35;
         ctx.fillStyle = '#ffffff';
@@ -152,11 +175,17 @@ export class Enemy {
       }
     }
 
-    // Глаза
+    // Глаза с бликами
     ctx.fillStyle = COLORS.enemyEye;
     const blink = Math.sin(frame * 0.1) > 0.85;
     ctx.fillRect(screenX + 6, this.y + 8, 6, blink ? 1 : 5);
     ctx.fillRect(screenX + 18, this.y + 8, 6, blink ? 1 : 5);
+    // Блики
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    if (!blink) {
+      ctx.fillRect(screenX + 6, this.y + 8, 2, 2);
+      ctx.fillRect(screenX + 18, this.y + 8, 2, 2);
+    }
 
     // Злые брови
     ctx.strokeStyle = COLORS.enemyEye;

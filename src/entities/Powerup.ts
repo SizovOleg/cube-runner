@@ -34,32 +34,54 @@ export class Powerup {
     const label = POWERUP_LABELS[this.type];
     const pulse = Math.sin(frame * 0.08) * 0.15;
 
-    // Внешнее свечение
-    ctx.globalAlpha = 0.15 + pulse;
-    ctx.fillStyle = color;
+    // Лучи света (6 линий, медленно вращаются)
+    const rayAngle = frame * 0.015;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(rayAngle);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    for (let ri = 0; ri < 6; ri++) {
+      const angle = (ri / 6) * Math.PI * 2;
+      ctx.globalAlpha = 0.18 + pulse * 0.5;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(angle) * 14, Math.sin(angle) * 14);
+      ctx.lineTo(Math.cos(angle) * 26, Math.sin(angle) * 26);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    // Внешнее кольцо (кольцевой градиент)
+    const ringGrad = ctx.createRadialGradient(cx, cy, 10, cx, cy, 22);
+    ringGrad.addColorStop(0, color + '55');
+    ringGrad.addColorStop(1, color + '00');
+    ctx.fillStyle = ringGrad;
     ctx.beginPath();
     ctx.arc(cx, cy, 22, 0, Math.PI * 2);
     ctx.fill();
 
-    // Основной круг
-    ctx.globalAlpha = 0.8 + pulse;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 15;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(cx, cy, 12, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-
-    // Обводка
-    ctx.strokeStyle = '#fff';
+    // Внешний контур-кольцо
+    ctx.globalAlpha = 0.4 + pulse;
+    ctx.strokeStyle = color;
     ctx.lineWidth = 1.5;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 10;
     ctx.beginPath();
-    ctx.arc(cx, cy, 12, 0, Math.PI * 2);
+    ctx.arc(cx, cy, 16, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Метка
+    // Внутренний яркий круг
+    ctx.globalAlpha = 0.85 + pulse;
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
     ctx.globalAlpha = 1;
+
+    // Метка
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'center';

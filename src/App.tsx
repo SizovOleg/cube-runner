@@ -7,6 +7,8 @@ import {
   POWERUP_COLORS, POWERUP_LABELS, PowerupType,
   LEVEL_BOSS_ARENA_WIDTH, BOSS_INTRO_DURATION,
   SKIN_COLORS, SKIN_NAMES, SkinId,
+  COIN_RADIUS, COIN_COLOR, COIN_GLOW,
+  UpgradeType, UPGRADES,
 } from '@utils/constants';
 import { Player } from '@entities/Player';
 import { Enemy } from '@entities/Enemy';
@@ -24,7 +26,7 @@ import level1 from '@levels/data/level1';
 import level2 from '@levels/data/level2';
 import level3 from '@levels/data/level3';
 import { LevelData, ObstacleData, RocketCorridorData } from '@levels/types';
-import { loadProgress, saveLevelComplete, getMaxUnlockedLevel, unlockSkin, setCurrentSkin, getCurrentSkinColor } from '@utils/storage';
+import { loadProgress, saveLevelComplete, getMaxUnlockedLevel, unlockSkin, setCurrentSkin, getCurrentSkinColor, addCoins, buyUpgrade, activateUpgrade, deactivateUpgrade, consumeActiveUpgrades } from '@utils/storage';
 
 // --- Конфиг уровней для экрана выбора ---
 const LEVEL_INFO: Array<{ id: number; name: string; bossName: string }> = [
@@ -49,7 +51,8 @@ interface Bullet { x: number; y: number; width: number; height: number }
 interface EnemyBullet { x: number; y: number; vx: number; width: number; height: number }
 interface BombProjectile { x: number; y: number; vx: number; vy: number; width: number; height: number }
 interface DeathInfo { score: number; kills: number }
-interface LevelCompleteInfo { score: number; kills: number }
+interface LevelCompleteInfo { score: number; kills: number; coinsCollected: number }
+interface LiveCoin { x: number; y: number; collected: boolean }
 // Мутабельная копия ObstacleData для движущихся платформ
 interface MovingObstacle { x: number; y: number; baseX: number; baseY: number; width: number; height: number; type: string; moveRange: number; moveSpeed: number; moveAxis: 'x' | 'y'; dir: number }
 
@@ -98,6 +101,64 @@ function neonBtnStyle(bg: string): React.CSSProperties {
   };
 }
 
+// --- Fullscreen & Scale ---
+
+function useScaleFactor(): number {
+  const [scale, setScale] = useState(() =>
+    Math.min(window.innerWidth / CANVAS_WIDTH, window.innerHeight / CANVAS_HEIGHT)
+  );
+  useEffect(() => {
+    const update = () => setScale(
+      Math.min(window.innerWidth / CANVAS_WIDTH, window.innerHeight / CANVAS_HEIGHT)
+    );
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+  return scale;
+}
+
+function requestFullscreen(): void {
+  const el = document.documentElement as HTMLElement & {
+    webkitRequestFullscreen?: () => Promise<void>;
+  };
+  if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+  else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+}
+
+function ScaledContainer({ children }: { children: React.ReactNode }) {
+  const scale = useScaleFactor();
+  const [opacity, setOpacity] = useState(0);
+  useEffect(() => {
+    // Плавное появление при монтировании (0 → 1 за 300мс)
+    const t = setTimeout(() => setOpacity(1), 10);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <div style={{
+      width: CANVAS_WIDTH * scale,
+      height: CANVAS_HEIGHT * scale,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+      opacity,
+      transition: 'opacity 0.3s ease',
+    }}>
+      <div style={{
+        transform: `scale(${scale})`,
+        transformOrigin: 'center center',
+        width: CANVAS_WIDTH,
+        height: CANVAS_HEIGHT,
+        flexShrink: 0,
+        position: 'relative',
+      }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // --- Atmosphere & Ground Effects ---
 
 // Nebulae for Level 1 (pre-generated positions)
@@ -131,9 +192,57 @@ function createSnowflakes(count: number): Snowflake[] {
   }));
 }
 
+/** Параллакс-слой: плавные холмы (дальний, 0.1x) */
+function drawFarHills(ctx: CanvasRenderingContext2D, camera: Camera, levelId: number): void {
+  const hillColor = levelId === 3 ? 'rgba(40,80,160,0.18)' : levelId === 2 ? 'rgba(20,80,30,0.18)' : 'rgba(30,20,100,0.18)';
+  const offsetX = camera.x * 0.1;
+  ctx.fillStyle = hillColor;
+  ctx.beginPath();
+  ctx.moveTo(0, GROUND_Y);
+  for (let sx = 0; sx <= CANVAS_WIDTH; sx += 4) {
+    const wx = sx + offsetX;
+    const hy = GROUND_Y - 60 - Math.sin(wx * 0.003) * 50 - Math.sin(wx * 0.007 + 1.2) * 30;
+    if (sx === 0) ctx.moveTo(sx, hy);
+    else ctx.lineTo(sx, hy);
+  }
+  ctx.lineTo(CANVAS_WIDTH, GROUND_Y);
+  ctx.closePath();
+  ctx.fill();
+}
+
+/** Параллакс-слой: плывущие ромбы (средний, 0.3x) */
+function drawMidDiamonds(ctx: CanvasRenderingContext2D, camera: Camera, frame: number, levelId: number): void {
+  const color = levelId === 3 ? 'rgba(80,160,255,0.06)' : levelId === 2 ? 'rgba(50,200,80,0.06)' : 'rgba(80,60,220,0.07)';
+  const offsetX = camera.x * 0.3;
+  const diamonds = [
+    { bx: 100, by: 80,  s: 55 },
+    { bx: 320, by: 140, s: 40 },
+    { bx: 550, by: 60,  s: 70 },
+    { bx: 750, by: 120, s: 45 },
+    { bx: 950, by: 90,  s: 60 },
+  ];
+  ctx.fillStyle = color;
+  for (const d of diamonds) {
+    const dx = ((d.bx - offsetX % 1100 + 1100) % 1100);
+    const dy = d.by + Math.sin(frame * 0.008 + d.bx) * 10;
+    ctx.beginPath();
+    ctx.moveTo(dx, dy - d.s);
+    ctx.lineTo(dx + d.s * 0.6, dy);
+    ctx.lineTo(dx, dy + d.s);
+    ctx.lineTo(dx - d.s * 0.6, dy);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
 function drawAtmosphere(ctx: CanvasRenderingContext2D, frame: number, camera: Camera, levelId: number, rain: RainDrop[], snow: Snowflake[]): void {
+  // Дальний слой: холмы
+  drawFarHills(ctx, camera, levelId);
+  // Средний слой: ромбы
+  drawMidDiamonds(ctx, camera, frame, levelId);
+
   if (levelId === 1) {
-    // Неоновые туманности — полупрозрачные размытые круги с параллаксом
+    // Неоновые туманности — полупрозрачные размытые круги с параллаксом 0.1x
     for (const neb of NEBULAE) {
       const nx = ((neb.x - camera.x * 0.1) % (CANVAS_WIDTH * 1.5) + CANVAS_WIDTH * 1.5) % (CANVAS_WIDTH * 1.5) - 150;
       ctx.fillStyle = neb.color;
@@ -146,21 +255,15 @@ function drawAtmosphere(ctx: CanvasRenderingContext2D, frame: number, camera: Ca
     ctx.fillStyle = 'rgba(34,255,68,0.4)';
     for (const drop of rain) {
       drop.y += drop.speed;
-      if (drop.y > GROUND_Y) {
-        drop.y = -10;
-        drop.x = Math.random() * CANVAS_WIDTH;
-      }
+      if (drop.y > GROUND_Y) { drop.y = -10; drop.x = Math.random() * CANVAS_WIDTH; }
       ctx.fillRect(drop.x, drop.y, 2, drop.len);
     }
   } else if (levelId === 3) {
-    // Снежинки — белые точки, медленные, разного размера
+    // Снежинки
     for (const sf of snow) {
       sf.y += sf.speed;
       sf.x += Math.sin(frame * 0.02 + sf.drift) * 0.3;
-      if (sf.y > GROUND_Y) {
-        sf.y = -5;
-        sf.x = Math.random() * CANVAS_WIDTH;
-      }
+      if (sf.y > GROUND_Y) { sf.y = -5; sf.x = Math.random() * CANVAS_WIDTH; }
       ctx.globalAlpha = 0.4 + sf.size * 0.1;
       ctx.fillStyle = '#fff';
       ctx.beginPath();
@@ -169,33 +272,40 @@ function drawAtmosphere(ctx: CanvasRenderingContext2D, frame: number, camera: Ca
     }
     ctx.globalAlpha = 1;
   }
+
+  // Пульсация фона каждые ~2 сек (120 кадров)
+  const pulse = Math.sin(frame * (Math.PI / 120)) * 0.5 + 0.5; // 0..1 каждые 120 кадров
+  ctx.globalAlpha = pulse * 0.025;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, CANVAS_WIDTH, GROUND_Y);
+  ctx.globalAlpha = 1;
 }
 
-function drawGroundTexture(ctx: CanvasRenderingContext2D, camera: Camera, levelId: number, _groundColor: string): void {
-  // Случайные пиксели на земле для текстуры
-  const startTile = Math.floor(camera.x / 20) * 20;
-  ctx.globalAlpha = 0.15;
-  for (let wx = startTile; wx < startTile + CANVAS_WIDTH + 40; wx += 20) {
+function drawGroundTexture(ctx: CanvasRenderingContext2D, camera: Camera, levelId: number, groundLineColor: string): void {
+  // Вертикальные полосы-сетка с градиентной прозрачностью (яркие вверху, исчезают внизу)
+  const gridStart = Math.floor(camera.x / 40) * 40;
+  ctx.strokeStyle = groundLineColor;
+  ctx.lineWidth = 1;
+  for (let wx = gridStart; wx < gridStart + CANVAS_WIDTH + 80; wx += 40) {
     const sx = wx - camera.x;
-    // Псевдослучайность на основе позиции
-    const seed = (wx * 7 + 13) % 100;
-    if (seed < 40) {
-      const py = GROUND_Y + 8 + (seed % 3) * 12;
-      ctx.fillStyle = seed % 2 === 0 ? '#ffffff' : '#000000';
-      ctx.fillRect(sx, py, 3, 3);
-    }
+    const grad = ctx.createLinearGradient(sx, GROUND_Y, sx, CANVAS_HEIGHT);
+    grad.addColorStop(0, groundLineColor + '55');
+    grad.addColorStop(1, groundLineColor + '00');
+    ctx.strokeStyle = grad as unknown as string;
+    ctx.beginPath();
+    ctx.moveTo(sx, GROUND_Y);
+    ctx.lineTo(sx, CANVAS_HEIGHT);
+    ctx.stroke();
   }
-  ctx.globalAlpha = 1;
 
   // Декорации по верхнему краю земли
   const decoStart = Math.floor(camera.x / 40) * 40;
   for (let wx = decoStart; wx < decoStart + CANVAS_WIDTH + 80; wx += 40) {
     const sx = wx - camera.x;
     const seed = (wx * 3 + 7) % 100;
-    if (seed > 60) continue; // не все позиции заняты
+    if (seed > 60) continue;
 
     if (levelId === 1) {
-      // Трава — маленькие зелёные треугольники
       ctx.fillStyle = '#33cc44';
       const h = 5 + (seed % 4);
       ctx.beginPath();
@@ -205,7 +315,6 @@ function drawGroundTexture(ctx: CanvasRenderingContext2D, camera: Camera, levelI
       ctx.closePath();
       ctx.fill();
     } else if (levelId === 2) {
-      // Токсичные капли — перевёрнутые зелёные треугольники
       ctx.fillStyle = '#22aa33';
       const h = 4 + (seed % 3);
       ctx.beginPath();
@@ -215,7 +324,6 @@ function drawGroundTexture(ctx: CanvasRenderingContext2D, camera: Camera, levelI
       ctx.closePath();
       ctx.fill();
     } else if (levelId === 3) {
-      // Ледяные кристаллы — голубые треугольники вверх
       ctx.fillStyle = '#88ccff';
       const h = 5 + (seed % 5);
       ctx.beginPath();
@@ -230,44 +338,96 @@ function drawGroundTexture(ctx: CanvasRenderingContext2D, camera: Camera, levelI
 
 // --- Drawing ---
 
+/** Скруглённый rect (fallback) */
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+  const rr = ctx as CanvasRenderingContext2D & { roundRect?: (...a: unknown[]) => void };
+  if (rr.roundRect) { rr.roundRect(x, y, w, h, r); return; }
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+function drawPlatform(ctx: CanvasRenderingContext2D, px: number, py: number, pw: number, ph: number, color: string): void {
+  // Тень под платформой
+  ctx.globalAlpha = 0.25;
+  ctx.fillStyle = '#000';
+  roundRect(ctx, px + 2, py + 3, pw, ph, 4);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // Градиентная заливка (светлый → тёмный сверху вниз)
+  const grad = ctx.createLinearGradient(px, py, px, py + ph);
+  grad.addColorStop(0, color + 'ff');
+  grad.addColorStop(1, color + '55');
+  ctx.fillStyle = grad;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 8;
+  roundRect(ctx, px, py, pw, ph, 4);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Светлая линия по верхнему краю (highlight)
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(px + 4, py + 1);
+  ctx.lineTo(px + pw - 4, py + 1);
+  ctx.stroke();
+}
+
 function drawObstacles(ctx: CanvasRenderingContext2D, obstacles: readonly ObstacleData[], movingPlatforms: MovingObstacle[], camera: Camera): void {
-  // Статические препятствия (кроме moving_platform — они рисуются отдельно)
   for (const obs of obstacles) {
     if (obs.type === 'moving_platform') continue;
     const ox = camera.worldToScreen(obs.x);
     if (ox < -100 || ox > CANVAS_WIDTH + 100) continue;
+
     if (obs.type === 'spike') {
-      ctx.fillStyle = COLORS.spike;
-      ctx.shadowColor = COLORS.spike;
-      ctx.shadowBlur = 8;
+      const tipX = ox + obs.width / 2;
+      const tipY = obs.y - 5;
+      const baseY = obs.y + obs.height;
+
+      // Мягкое красное свечение у основания
+      const radGrad = ctx.createRadialGradient(tipX, baseY, 0, tipX, baseY, obs.width);
+      radGrad.addColorStop(0, COLORS.spike + '55');
+      radGrad.addColorStop(1, COLORS.spike + '00');
+      ctx.fillStyle = radGrad;
       ctx.beginPath();
-      ctx.moveTo(ox, obs.y + obs.height);
-      ctx.lineTo(ox + obs.width / 2, obs.y - 5);
-      ctx.lineTo(ox + obs.width, obs.y + obs.height);
+      ctx.arc(tipX, baseY, obs.width, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Градиентный шип
+      const spikeGrad = ctx.createLinearGradient(ox, baseY, tipX, tipY);
+      spikeGrad.addColorStop(0, '#cc1133');
+      spikeGrad.addColorStop(1, COLORS.spike);
+      ctx.fillStyle = spikeGrad;
+      ctx.shadowColor = COLORS.spike;
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.moveTo(ox + 2, baseY);                // чуть скруглённое основание
+      ctx.lineTo(tipX, tipY);
+      ctx.lineTo(ox + obs.width - 2, baseY);
       ctx.closePath();
       ctx.fill();
       ctx.shadowBlur = 0;
+
     } else if (obs.type === 'platform') {
-      ctx.fillStyle = COLORS.platform;
-      ctx.shadowColor = COLORS.platform;
-      ctx.shadowBlur = 6;
-      ctx.fillRect(ox, obs.y, obs.width, obs.height);
-      ctx.shadowBlur = 0;
+      drawPlatform(ctx, ox, obs.y, obs.width, obs.height, COLORS.platform);
     }
   }
+
   // Движущиеся платформы
   for (const mp of movingPlatforms) {
     const mx = camera.worldToScreen(mp.x);
     if (mx < -100 || mx > CANVAS_WIDTH + 100) continue;
-    ctx.fillStyle = '#44aaff';
-    ctx.shadowColor = '#44aaff';
-    ctx.shadowBlur = 8;
-    ctx.fillRect(mx, mp.y, mp.width, mp.height);
-    // Стрелочки-индикаторы направления движения
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    drawPlatform(ctx, mx, mp.y, mp.width, mp.height, '#44aaff');
+
+    // Стрелочки-индикаторы
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
     if (mp.moveAxis === 'y') {
-      // Стрелка вверх-вниз
       ctx.beginPath();
       ctx.moveTo(mx + mp.width / 2 - 4, mp.y + mp.height / 2);
       ctx.lineTo(mx + mp.width / 2, mp.y + 2);
@@ -279,7 +439,6 @@ function drawObstacles(ctx: CanvasRenderingContext2D, obstacles: readonly Obstac
       ctx.lineTo(mx + mp.width / 2 + 4, mp.y + mp.height / 2);
       ctx.fill();
     } else {
-      // Стрелка влево-вправо
       ctx.beginPath();
       ctx.moveTo(mx + mp.width / 2, mp.y + mp.height / 2 - 4);
       ctx.lineTo(mx + 2, mp.y + mp.height / 2);
@@ -505,13 +664,31 @@ function drawCorridor(ctx: CanvasRenderingContext2D, corridor: RocketCorridorDat
 }
 
 function drawBullets(ctx: CanvasRenderingContext2D, bullets: Bullet[]): void {
-  ctx.fillStyle = COLORS.bullet;
-  ctx.shadowColor = COLORS.bullet;
-  ctx.shadowBlur = 8;
   for (const b of bullets) {
-    ctx.fillRect(b.x, b.y, b.width, b.height);
-    ctx.globalAlpha = 0.4;
-    ctx.fillRect(b.x - 8, b.y + 1, 8, b.height - 2);
+    // Хвост пули (3 затухающих копии)
+    for (let ti = 1; ti <= 3; ti++) {
+      ctx.globalAlpha = 0.15 / ti;
+      ctx.fillStyle = COLORS.bullet;
+      const tw = b.width * (1 - ti * 0.15);
+      const tx = b.x - ti * 6;
+      roundRect(ctx, tx, b.y + (b.height - tw * 0.6) / 2, tw, b.height * 0.6, 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Основная пуля со скруглёнными углами + glow
+    ctx.shadowColor = COLORS.bullet;
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = COLORS.bullet;
+    roundRect(ctx, b.x, b.y, b.width, b.height, Math.min(b.height / 2, 3));
+    ctx.fill();
+
+    // Яркий блик в центре
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#fff';
+    roundRect(ctx, b.x + 1, b.y + 1, b.width - 2, b.height - 2, 2);
+    ctx.fill();
     ctx.globalAlpha = 1;
   }
   ctx.shadowBlur = 0;
@@ -589,7 +766,14 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
 
     const levelData = LEVELS[levelId] ?? level1;
     const skinColor = getCurrentSkinColor();
-    const player = new Player(100, 3, skinColor);
+    // Применяем активные апгрейды
+    const activeUpgrades = consumeActiveUpgrades();
+    const hasArmor = activeUpgrades.includes('armor');
+    const baseHP = 3 + (hasArmor ? 2 : 0);
+    const player = new Player(100, baseHP, skinColor);
+    if (activeUpgrades.includes('double_jump')) player.hasDoubleJump = true;
+    if (activeUpgrades.includes('magnet')) player.magnetTimer = 30 * 60; // 30 сек
+    if (activeUpgrades.includes('super_bullet')) player.superBulletTimer = 20 * 60; // 20 сек
     const camera = new Camera();
     const particles = new ParticleSystem();
     const obstacles = levelData.obstacles;
@@ -597,6 +781,9 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
     const powerups = createPowerups(levelData);
     const movingPlatforms = createMovingPlatforms(levelData);
     const cages = (levelData.cages || []).map(c => new Cage(c.x, c.y, c.skinId));
+    // Монеты уровня
+    const levelCoins: LiveCoin[] = (levelData.coins || []).map(c => ({ x: c.x, y: c.y, collected: false }));
+    let coinsCollected = 0;
     const bullets: Bullet[] = [];
     const enemyBullets: EnemyBullet[] = [];
     const bombs: BombProjectile[] = [];
@@ -642,12 +829,13 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
         particles.update();
         camera.update(player.x);
         // Render и return
-        renderFrame(ctx, frame, camera, stars, obstacles, movingPlatforms, enemies, powerups, bullets, enemyBullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp, bgColor, groundColor, groundLineColor);
+        renderFrame(ctx, frame, camera, stars, obstacles, movingPlatforms, enemies, powerups, bullets, enemyBullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp, bgColor, groundColor, groundLineColor, levelCoins, coinsCollected);
         rafRef.current = requestAnimationFrame(loop);
         if (bossDefeatTimer >= 60) {
           const finalScore = Math.floor(camera.x / 10);
           saveLevelComplete(levelId, finalScore, kills);
-          setLevelComplete({ score: finalScore, kills });
+          addCoins(coinsCollected);
+          setLevelComplete({ score: finalScore, kills, coinsCollected });
         }
         return;
       }
@@ -660,7 +848,7 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
           bossPhase = 'fight';
           if (boss) boss.introPlaying = false;
         }
-        renderFrame(ctx, frame, camera, stars, obstacles, movingPlatforms, enemies, powerups, bullets, enemyBullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp, bgColor, groundColor, groundLineColor);
+        renderFrame(ctx, frame, camera, stars, obstacles, movingPlatforms, enemies, powerups, bullets, enemyBullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp, bgColor, groundColor, groundLineColor, levelCoins, coinsCollected);
         rafRef.current = requestAnimationFrame(loop);
         return;
       }
@@ -738,6 +926,8 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
 
         if (inp.jump && player.onGround) {
           player.jump();
+        } else if (inp.jump && !player.onGround && player.hasDoubleJump && player.doubleJumpAvailable) {
+          player.doubleJump();
         } else if (inp.jump && !player.onGround) {
           player.fly();
         }
@@ -871,6 +1061,45 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
         }
       }
 
+      // Магнит: притягивает монеты и powerups
+      if (player.isMagnetActive()) {
+        const MAGNET_RANGE = 150;
+        for (const coin of levelCoins) {
+          if (coin.collected) continue;
+          const dx = coin.x - (player.x + player.width / 2);
+          const dy = coin.y - (player.y + player.height / 2);
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < MAGNET_RANGE && dist > 1) {
+            coin.x -= (dx / dist) * 5;
+            coin.y -= (dy / dist) * 5;
+          }
+        }
+        for (const pw of powerups) {
+          if (pw.collected) continue;
+          const dx = pw.x - (player.x + player.width / 2);
+          const dy = pw.y - (player.y + player.height / 2);
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < MAGNET_RANGE && dist > 1) {
+            pw.x -= (dx / dist) * 4;
+            pw.y -= (dy / dist) * 4;
+          }
+        }
+      }
+
+      // Сбор монет уровня
+      for (const coin of levelCoins) {
+        if (coin.collected) continue;
+        const cx = player.x, cy = player.y;
+        const coinCx = coin.x, coinCy = coin.y;
+        if (Math.abs(cx + player.width / 2 - coinCx) < player.width / 2 + COIN_RADIUS &&
+            Math.abs(cy + player.height / 2 - coinCy) < player.height / 2 + COIN_RADIUS) {
+          coin.collected = true;
+          coinsCollected++;
+          const sx = camera.worldToScreen(coin.x);
+          particles.burst(sx, coin.y, COIN_COLOR, 8);
+        }
+      }
+
       // Клетки со скинами
       for (const cage of cages) {
         if (cage.collected) continue;
@@ -925,6 +1154,7 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
       // Пули → враги
       for (let bi = bullets.length - 1; bi >= 0; bi--) {
         const b = bullets[bi];
+        let hitAny = false;
         for (const enemy of enemies) {
           if (!enemy.alive) continue;
           if (aabbCollision(b, enemy)) {
@@ -932,9 +1162,12 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
             kills++;
             const ex = camera.worldToScreen(enemy.x);
             particles.burst(ex + ENTITY_SIZE / 2, enemy.y + ENTITY_SIZE / 2, COLORS.enemy, 12);
-            bullets.splice(bi, 1);
-            break;
+            hitAny = true;
+            if (!player.isSuperBullet()) break; // обычная пуля: стоп после 1 врага
           }
+        }
+        if (hitAny && !player.isSuperBullet()) {
+          bullets.splice(bi, 1);
         }
       }
 
@@ -1138,8 +1371,8 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
             const py = player.y + player.height / 2;
             if (Math.abs(py - coinY) < 20) {
               corridor.coins.splice(ci, 1);
-              kills++; // монета как +score
-              particles.burst(camera.worldToScreen(coinWX), coinY, '#ffdd00', 8);
+              coinsCollected++;
+              particles.burst(camera.worldToScreen(coinWX), coinY, COIN_COLOR, 8);
             }
           }
         }
@@ -1159,7 +1392,7 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
       }
 
       // --- RENDER ---
-      renderFrame(ctx, frame, camera, stars, obstacles, movingPlatforms, enemies, powerups, bullets, enemyBullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp, bgColor, groundColor, groundLineColor);
+      renderFrame(ctx, frame, camera, stars, obstacles, movingPlatforms, enemies, powerups, bullets, enemyBullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp, bgColor, groundColor, groundLineColor, levelCoins, coinsCollected);
 
       rafRef.current = requestAnimationFrame(loop);
     };
@@ -1174,6 +1407,7 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
       boss: Boss | null, bossPhase: BossPhase, bossIntroTimer: number,
       arenaX: number, inp: { jump: boolean },
       bgColor: string, groundColor: string, groundLineColor: string,
+      liveCoins: LiveCoin[], sessionCoins: number,
     ) {
       // Тряска экрана от боссов (Crusher / FrostKing)
       const shakeVal = boss && 'screenShake' in boss ? (boss as { screenShake: number }).screenShake : 0;
@@ -1184,48 +1418,88 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
         ctx.translate(shakeX, shakeY);
       }
 
-      ctx.fillStyle = bgColor;
+      // === Фон: вертикальный градиент ===
+      const bgGrad = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+      // Чуть светлее вверху, тёмный внизу
+      bgGrad.addColorStop(0, bgColor + 'cc');
+      bgGrad.addColorStop(0.6, bgColor);
+      bgGrad.addColorStop(1, '#000000');
+      ctx.fillStyle = bgGrad;
       ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-      // Звёзды
+      // === Звёзды (ближний слой 0.5x параллакс) ===
       for (const star of stars) {
-        const sx = ((star.x - camera.x * 0.3) % CANVAS_WIDTH + CANVAS_WIDTH) % CANVAS_WIDTH;
-        ctx.globalAlpha = 0.3 + Math.sin(star.blink + frame * 0.02) * 0.3;
+        const sx = ((star.x - camera.x * 0.5) % (CANVAS_WIDTH * 2) + CANVAS_WIDTH * 2) % (CANVAS_WIDTH * 2);
+        if (sx > CANVAS_WIDTH) continue;
+        const alpha = 0.35 + Math.sin(star.blink + frame * 0.02) * 0.3;
+        ctx.globalAlpha = alpha;
         ctx.fillStyle = COLORS.star;
-        ctx.fillRect(sx, star.y, star.size, star.size);
+        ctx.beginPath();
+        ctx.arc(sx, star.y, star.size * 0.6, 0, Math.PI * 2);
+        ctx.fill();
       }
       ctx.globalAlpha = 1;
 
-      // Атмосферные эффекты уровня
+      // === Атмосферные эффекты уровня (холмы + ромбы + rain/snow + пульсация) ===
       drawAtmosphere(ctx, frame, camera, levelId, rainDrops, snowflakes);
 
-      // Земля
-      ctx.fillStyle = groundColor;
+      // === Земля: градиентная заливка ===
+      const groundGrad = ctx.createLinearGradient(0, GROUND_Y, 0, CANVAS_HEIGHT);
+      groundGrad.addColorStop(0, groundColor + 'ff');
+      groundGrad.addColorStop(1, '#000000');
+      ctx.fillStyle = groundGrad;
       ctx.fillRect(0, GROUND_Y, CANVAS_WIDTH, CANVAS_HEIGHT - GROUND_Y);
-      ctx.strokeStyle = groundLineColor;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(0, GROUND_Y);
-      ctx.lineTo(CANVAS_WIDTH, GROUND_Y);
-      ctx.stroke();
 
-      ctx.globalAlpha = 0.15;
-      for (let i = 0; i < 25; i++) {
-        const lx = ((i * 40 - camera.x) % 1000 + 1000) % 1000;
-        if (lx < CANVAS_WIDTH) {
-          ctx.beginPath();
-          ctx.moveTo(lx, GROUND_Y);
-          ctx.lineTo(lx, CANVAS_HEIGHT);
-          ctx.stroke();
-        }
+      // Мягкое свечение линии земли (3 слоя)
+      const glowLayers = [
+        { w: 6, alpha: 0.12 },
+        { w: 2, alpha: 0.35 },
+        { w: 1, alpha: 0.9  },
+      ];
+      for (const layer of glowLayers) {
+        ctx.strokeStyle = groundLineColor;
+        ctx.shadowColor = groundLineColor;
+        ctx.shadowBlur = 8;
+        ctx.lineWidth = layer.w;
+        ctx.globalAlpha = layer.alpha;
+        ctx.beginPath();
+        ctx.moveTo(0, GROUND_Y);
+        ctx.lineTo(CANVAS_WIDTH, GROUND_Y);
+        ctx.stroke();
       }
       ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
 
-      // Текстура земли
-      drawGroundTexture(ctx, camera, levelId, groundColor);
+      // === Текстура земли (сетка + декорации) ===
+      drawGroundTexture(ctx, camera, levelId, groundLineColor);
 
       // Препятствия (статические + движущиеся)
       drawObstacles(ctx, obstacles, movingPlatforms, camera);
+
+      // Монеты уровня
+      for (const coin of liveCoins) {
+        if (coin.collected) continue;
+        const sx = camera.worldToScreen(coin.x);
+        if (sx < -20 || sx > CANVAS_WIDTH + 20) continue;
+        // Анимация: монета "мерцает" изменяя ширину (эффект вращения)
+        const scaleX = Math.abs(Math.cos(frame * 0.06 + coin.x * 0.01));
+        ctx.save();
+        ctx.translate(sx, coin.y);
+        ctx.scale(scaleX < 0.15 ? 0.15 : scaleX, 1);
+        ctx.beginPath();
+        ctx.arc(0, 0, COIN_RADIUS, 0, Math.PI * 2);
+        ctx.fillStyle = COIN_COLOR;
+        ctx.shadowColor = COIN_GLOW;
+        ctx.shadowBlur = 10;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        // Блеск
+        ctx.fillStyle = 'rgba(255,255,200,0.7)';
+        ctx.beginPath();
+        ctx.arc(-2, -3, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
 
       // Ракетный коридор
       if (corridor) {
@@ -1414,48 +1688,117 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
       if (Math.abs(displayScore - actualScore) < 1) displayScore = actualScore;
       const shownScore = Math.floor(displayScore);
 
-      // Score & Kills (не поверх boss HP)
+      // === HUD фон (полупрозрачный) ===
       if (bossPhase !== 'fight') {
-        ctx.fillStyle = COLORS.text;
-        ctx.font = 'bold 18px monospace';
-        ctx.fillText('Score: ' + shownScore, 20, 30);
-        ctx.fillText('Kills: ' + kills, 160, 30);
-      } else {
-        // Score/Kills мельче, внизу слева в бою
-        ctx.fillStyle = '#aaa';
-        ctx.font = '14px monospace';
-        ctx.fillText('Score: ' + shownScore + '  Kills: ' + kills, 20, GROUND_Y + 25);
+        ctx.globalAlpha = 0.3;
+        ctx.fillStyle = '#000';
+        roundRect(ctx, 10, 8, 330, 52, 8);
+        ctx.fill();
+        ctx.globalAlpha = 1;
       }
 
-      // HP
+      // Score & Kills
+      if (bossPhase !== 'fight') {
+        ctx.shadowColor = '#000';
+        ctx.shadowBlur = 4;
+        ctx.fillStyle = COLORS.text;
+        ctx.font = 'bold 16px monospace';
+        ctx.fillText('Score: ' + shownScore, 20, 28);
+        ctx.fillText('Kills: ' + kills, 155, 28);
+        // Монеты в HUD
+        ctx.fillStyle = COIN_COLOR;
+        ctx.shadowColor = COIN_GLOW;
+        ctx.shadowBlur = 6;
+        ctx.beginPath();
+        ctx.arc(280, 22, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 4;
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 14px monospace';
+        ctx.fillText(String(sessionCoins), 292, 28);
+        ctx.shadowBlur = 0;
+      } else {
+        ctx.shadowColor = '#000';
+        ctx.shadowBlur = 3;
+        ctx.fillStyle = '#aaa';
+        ctx.font = '13px monospace';
+        ctx.fillText('Score: ' + shownScore + '  Kills: ' + kills, 20, GROUND_Y + 25);
+        ctx.shadowBlur = 0;
+      }
+
+      // Иконки активных апгрейдов
+      let upgradeIconX = CANVAS_WIDTH - 115;
+      if (player.isMagnetActive()) {
+        ctx.font = '14px monospace';
+        ctx.fillStyle = '#44ddff';
+        ctx.fillText('🧲', upgradeIconX, 70);
+        upgradeIconX -= 22;
+      }
+      if (player.isSuperBullet()) {
+        ctx.font = '14px monospace';
+        ctx.fillStyle = '#ff44ff';
+        ctx.fillText('⚡', upgradeIconX, 70);
+        upgradeIconX -= 22;
+      }
+      if (player.hasDoubleJump) {
+        ctx.font = '14px monospace';
+        ctx.fillStyle = '#00ff88';
+        ctx.fillText('⬆', upgradeIconX, 70);
+      }
+
+      // HP: кружки с glow
       const hpY = bossPhase === 'fight' ? GROUND_Y + 35 : 42;
-      const hpLabelY = bossPhase === 'fight' ? GROUND_Y + 48 : 55;
+      const hpLabelY = bossPhase === 'fight' ? GROUND_Y + 48 : 53;
+      ctx.shadowColor = '#000';
+      ctx.shadowBlur = 4;
       ctx.fillStyle = COLORS.text;
-      ctx.font = 'bold 18px monospace';
+      ctx.font = 'bold 14px monospace';
       ctx.fillText('HP:', 20, hpLabelY);
+      ctx.shadowBlur = 0;
       for (let i = 0; i < player.maxHP; i++) {
-        ctx.fillStyle = i < player.hp ? skinColor : '#333';
-        ctx.shadowColor = i < player.hp ? player.skinGlow : 'transparent';
-        ctx.shadowBlur = i < player.hp ? 8 : 0;
-        ctx.fillRect(70 + i * 22, hpY, 16, 16);
+        const alive = i < player.hp;
+        ctx.fillStyle = alive ? skinColor : '#222';
+        ctx.shadowColor = alive ? player.skinColor : 'transparent';
+        ctx.shadowBlur = alive ? 10 : 0;
+        ctx.beginPath();
+        ctx.arc(66 + i * 22, hpY + 7, 7, 0, Math.PI * 2);
+        ctx.fill();
+        if (alive) {
+          ctx.globalAlpha = 0.4;
+          ctx.fillStyle = '#fff';
+          ctx.beginPath();
+          ctx.arc(63 + i * 22, hpY + 4, 3, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
       }
       ctx.shadowBlur = 0;
 
-      // Инвентарь powerups
+      // Инвентарь powerups — скруглённые слоты
       for (let si = 0; si < 3; si++) {
         const slotX = CANVAS_WIDTH - 110 + si * 34;
         const slotY = 10;
         const slotPw = player.inventory[si];
-        ctx.strokeStyle = slotPw ? POWERUP_COLORS[slotPw] : '#444';
+        const slotColor = slotPw ? POWERUP_COLORS[slotPw] : '#333';
+        // Фон слота
+        ctx.globalAlpha = 0.35;
+        ctx.fillStyle = '#000';
+        roundRect(ctx, slotX, slotY, 28, 28, 5);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        // Обводка
+        ctx.strokeStyle = slotColor;
         ctx.lineWidth = 2;
-        ctx.shadowColor = slotPw ? POWERUP_COLORS[slotPw] : 'transparent';
+        ctx.shadowColor = slotPw ? slotColor : 'transparent';
         ctx.shadowBlur = slotPw ? 8 : 0;
-        ctx.strokeRect(slotX, slotY, 28, 28);
+        roundRect(ctx, slotX, slotY, 28, 28, 5);
+        ctx.stroke();
         ctx.shadowBlur = 0;
         if (slotPw) {
-          ctx.globalAlpha = 0.3;
+          ctx.globalAlpha = 0.35;
           ctx.fillStyle = POWERUP_COLORS[slotPw];
-          ctx.fillRect(slotX + 1, slotY + 1, 26, 26);
+          roundRect(ctx, slotX + 1, slotY + 1, 26, 26, 4);
+          ctx.fill();
           ctx.globalAlpha = 1;
           ctx.fillStyle = '#fff';
           ctx.font = 'bold 10px monospace';
@@ -1463,9 +1806,9 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
           ctx.fillText(POWERUP_LABELS[slotPw], slotX + 14, slotY + 18);
           ctx.textAlign = 'left';
         }
-        ctx.fillStyle = '#666';
+        ctx.fillStyle = '#777';
         ctx.font = '9px monospace';
-        ctx.fillText(String(si + 1), slotX + 2, slotY + 26);
+        ctx.fillText(String(si + 1), slotX + 3, slotY + 26);
       }
 
       // Таймер-бар Shield / Rocket / Corridor
@@ -1531,9 +1874,10 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
     };
   }, [death, levelComplete]);
 
-  // Touch: canvas tap = jump
+  // Touch: canvas tap = jump + fullscreen
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     e.preventDefault();
+    requestFullscreen();
     inputRef.current?.setJump(true);
   }, []);
   const handleTouchEnd = useCallback((e: React.TouchEvent) => {
@@ -1787,6 +2131,14 @@ export default function App() {
     setScreen('skins');
   }, []);
 
+  const goToShop = useCallback(() => {
+    setScreen('shop');
+  }, []);
+
+  const goToUpgrades = useCallback(() => {
+    setScreen('upgrades');
+  }, []);
+
   const restartLevel = useCallback(() => {
     setGameKey((k) => k + 1);
   }, []);
@@ -1815,23 +2167,31 @@ export default function App() {
       }}
     >
       {/* === ГЛАВНОЕ МЕНЮ === */}
-      {screen === 'menu' && <MenuScreen onPlay={handlePlay} onLevelSelect={goToLevelSelect} onSkins={goToSkins} />}
+      {screen === 'menu' && <ScaledContainer><MenuScreen onPlay={handlePlay} onLevelSelect={goToLevelSelect} onSkins={goToSkins} onShop={goToShop} /></ScaledContainer>}
 
       {/* === ВЫБОР УРОВНЯ === */}
-      {screen === 'levelSelect' && <LevelSelectScreen onStart={startLevel} onBack={goToMenu} />}
+      {screen === 'levelSelect' && <ScaledContainer><LevelSelectScreen onStart={startLevel} onBack={goToMenu} onUpgrades={goToUpgrades} /></ScaledContainer>}
 
       {/* === СКИНЫ === */}
-      {screen === 'skins' && <SkinSelectScreen onBack={goToMenu} />}
+      {screen === 'skins' && <ScaledContainer><SkinSelectScreen onBack={goToMenu} /></ScaledContainer>}
+
+      {/* === МАГАЗИН === */}
+      {screen === 'shop' && <ScaledContainer><ShopScreen onBack={goToMenu} /></ScaledContainer>}
+
+      {/* === АПГРЕЙДЫ === */}
+      {screen === 'upgrades' && <ScaledContainer><UpgradesScreen onBack={goToLevelSelect} /></ScaledContainer>}
 
       {/* === ИГРА === */}
       {screen === 'playing' && (
-        <GameCanvas
-          key={gameKey}
-          levelId={currentLevel}
-          onBack={goToMenu}
-          onRestart={restartLevel}
-          onNextLevel={currentLevel < TOTAL_LEVELS ? nextLevel : goToMenu}
-        />
+        <ScaledContainer>
+          <GameCanvas
+            key={gameKey}
+            levelId={currentLevel}
+            onBack={goToMenu}
+            onRestart={restartLevel}
+            onNextLevel={currentLevel < TOTAL_LEVELS ? nextLevel : goToMenu}
+          />
+        </ScaledContainer>
       )}
     </div>
   );
@@ -1839,7 +2199,7 @@ export default function App() {
 
 // --- Animated Menu Screen ---
 
-function MenuScreen({ onPlay, onLevelSelect, onSkins }: { onPlay: () => void; onLevelSelect: () => void; onSkins: () => void }) {
+function MenuScreen({ onPlay, onLevelSelect, onSkins, onShop }: { onPlay: () => void; onLevelSelect: () => void; onSkins: () => void; onShop: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
 
@@ -1887,34 +2247,74 @@ function MenuScreen({ onPlay, onLevelSelect, onSkins }: { onPlay: () => void; on
         cubeOnGround = true;
       }
 
-      // Рендер
-      ctx.fillStyle = COLORS.bg;
+      // --- Рендер ---
+
+      // Фон: вертикальный градиент
+      const bgGrad = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+      bgGrad.addColorStop(0, '#0a1a14');
+      bgGrad.addColorStop(0.6, COLORS.bg);
+      bgGrad.addColorStop(1, '#000');
+      ctx.fillStyle = bgGrad;
       ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-      // Звёзды
+      // Параллакс-холмы (0.05x)
+      const hillOffset = frame * 0.3;
+      ctx.beginPath();
+      for (let sx = 0; sx <= CANVAS_WIDTH + 80; sx += 4) {
+        const wx = sx + hillOffset;
+        const hy = GROUND_Y - 40 - Math.sin(wx * 0.008) * 35 - Math.sin(wx * 0.019 + 1) * 20;
+        if (sx === 0) ctx.moveTo(sx, hy); else ctx.lineTo(sx, hy);
+      }
+      ctx.lineTo(CANVAS_WIDTH, CANVAS_HEIGHT);
+      ctx.lineTo(0, CANVAS_HEIGHT);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(0,255,136,0.06)';
+      ctx.fill();
+
+      // Звёзды с параллаксом
       for (const star of menuStars) {
-        const sx = (star.x + frame * 0.2) % CANVAS_WIDTH;
-        ctx.globalAlpha = 0.3 + Math.sin(star.blink + frame * 0.02) * 0.3;
+        const sx = ((star.x - frame * 0.4) % CANVAS_WIDTH + CANVAS_WIDTH) % CANVAS_WIDTH;
+        ctx.globalAlpha = 0.25 + Math.sin(star.blink + frame * 0.02) * 0.25;
         ctx.fillStyle = COLORS.star;
-        ctx.fillRect(sx, star.y, star.size, star.size);
+        ctx.beginPath();
+        ctx.arc(sx, star.y, star.size * 0.5, 0, Math.PI * 2);
+        ctx.fill();
       }
       ctx.globalAlpha = 1;
 
-      // Земля
-      ctx.fillStyle = COLORS.ground;
+      // Земля с градиентом
+      const groundGrad = ctx.createLinearGradient(0, GROUND_Y, 0, CANVAS_HEIGHT);
+      groundGrad.addColorStop(0, COLORS.ground);
+      groundGrad.addColorStop(1, '#050a08');
+      ctx.fillStyle = groundGrad;
       ctx.fillRect(0, GROUND_Y, CANVAS_WIDTH, CANVAS_HEIGHT - GROUND_Y);
-      ctx.strokeStyle = COLORS.groundLine;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(0, GROUND_Y);
-      ctx.lineTo(CANVAS_WIDTH, GROUND_Y);
-      ctx.stroke();
 
-      // Шипы
+      // Линия земли — 3 слоя свечения
+      const glowLayers = [
+        { w: 5, alpha: 0.12 }, { w: 2, alpha: 0.4 }, { w: 1, alpha: 0.9 },
+      ];
+      for (const gl of glowLayers) {
+        ctx.strokeStyle = COLORS.groundLine;
+        ctx.lineWidth = gl.w;
+        ctx.globalAlpha = gl.alpha;
+        ctx.shadowColor = COLORS.groundLine;
+        ctx.shadowBlur = gl.w === 1 ? 6 : 0;
+        ctx.beginPath();
+        ctx.moveTo(0, GROUND_Y);
+        ctx.lineTo(CANVAS_WIDTH, GROUND_Y);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+
+      // Шипы с градиентом и glow
       for (const spikeX of spikes) {
-        ctx.fillStyle = COLORS.spike;
+        const sGrad = ctx.createLinearGradient(spikeX, GROUND_Y, spikeX + 10, GROUND_Y - 18);
+        sGrad.addColorStop(0, COLORS.spike + '99');
+        sGrad.addColorStop(1, COLORS.spike);
+        ctx.fillStyle = sGrad;
         ctx.shadowColor = COLORS.spike;
-        ctx.shadowBlur = 8;
+        ctx.shadowBlur = 12;
         ctx.beginPath();
         ctx.moveTo(spikeX, GROUND_Y);
         ctx.lineTo(spikeX + 10, GROUND_Y - 18);
@@ -1924,33 +2324,63 @@ function MenuScreen({ onPlay, onLevelSelect, onSkins }: { onPlay: () => void; on
         ctx.shadowBlur = 0;
       }
 
-      // Куб-персонаж
-      ctx.save();
-      ctx.translate(cubeX + ENTITY_SIZE / 2, cubeY + ENTITY_SIZE / 2);
-      ctx.rotate((cubeRotation * Math.PI) / 180);
-      ctx.shadowColor = COLORS.cubeGlow;
-      ctx.shadowBlur = 15;
-      ctx.fillStyle = COLORS.cube;
-      ctx.fillRect(-ENTITY_SIZE / 2, -ENTITY_SIZE / 2, ENTITY_SIZE, ENTITY_SIZE);
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = '#000';
-      ctx.fillRect(-7, -5, 4, 4);
-      ctx.fillRect(3, -5, 4, 4);
-      ctx.fillRect(-5, 3, 10, 2);
-      ctx.restore();
-
       // Трейл куба
-      for (let ti = 1; ti <= 3; ti++) {
-        ctx.globalAlpha = 0.1 / ti;
+      for (let ti = 3; ti >= 1; ti--) {
+        const t = (4 - ti) / 4;
+        ctx.globalAlpha = t * t * 0.18;
+        const trailSize = ENTITY_SIZE * (0.4 + t * 0.5);
+        const tx = cubeX - ti * demoSpeed * 2.5 + (ENTITY_SIZE - trailSize) / 2;
+        const ty = cubeY + (ENTITY_SIZE - trailSize) / 2;
         ctx.fillStyle = COLORS.cube;
-        const trailSize = ENTITY_SIZE * (1 - ti * 0.15);
-        ctx.fillRect(
-          cubeX - ti * demoSpeed * 3 + (ENTITY_SIZE - trailSize) / 2,
-          cubeY + (ENTITY_SIZE - trailSize) / 2,
-          trailSize, trailSize,
-        );
+        ctx.beginPath();
+        if ((ctx as CanvasRenderingContext2D & { roundRect?: (...a: unknown[]) => void }).roundRect) {
+          (ctx as CanvasRenderingContext2D & { roundRect: (...a: unknown[]) => void }).roundRect(tx, ty, trailSize, trailSize, 3);
+        } else {
+          ctx.rect(tx, ty, trailSize, trailSize);
+        }
+        ctx.fill();
       }
       ctx.globalAlpha = 1;
+
+      // Куб-персонаж с rounded corners и двойным glow
+      const hw = ENTITY_SIZE / 2;
+      const hh = ENTITY_SIZE / 2;
+      ctx.save();
+      ctx.translate(cubeX + hw, cubeY + hh);
+      ctx.rotate((cubeRotation * Math.PI) / 180);
+      // Внешнее свечение
+      ctx.shadowColor = COLORS.cube;
+      ctx.shadowBlur = 25;
+      ctx.fillStyle = COLORS.cube + '44';
+      if ((ctx as CanvasRenderingContext2D & { roundRect?: (...a: unknown[]) => void }).roundRect) {
+        (ctx as CanvasRenderingContext2D & { roundRect: (...a: unknown[]) => void }).roundRect(-hw - 3, -hh - 3, ENTITY_SIZE + 6, ENTITY_SIZE + 6, 6);
+      } else { ctx.rect(-hw - 3, -hh - 3, ENTITY_SIZE + 6, ENTITY_SIZE + 6); }
+      ctx.fill();
+      // Тело
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = COLORS.cube;
+      if ((ctx as CanvasRenderingContext2D & { roundRect?: (...a: unknown[]) => void }).roundRect) {
+        (ctx as CanvasRenderingContext2D & { roundRect: (...a: unknown[]) => void }).roundRect(-hw, -hh, ENTITY_SIZE, ENTITY_SIZE, 4);
+      } else { ctx.rect(-hw, -hh, ENTITY_SIZE, ENTITY_SIZE); }
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      // Блик
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = '#fff';
+      if ((ctx as CanvasRenderingContext2D & { roundRect?: (...a: unknown[]) => void }).roundRect) {
+        (ctx as CanvasRenderingContext2D & { roundRect: (...a: unknown[]) => void }).roundRect(-hw + 2, -hh + 2, ENTITY_SIZE - 4, 6, 3);
+      } else { ctx.rect(-hw + 2, -hh + 2, ENTITY_SIZE - 4, 6); }
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      // Глаза
+      ctx.fillStyle = '#000';
+      ctx.fillRect(-8, -5, 5, 5);
+      ctx.fillRect(3, -5, 5, 5);
+      ctx.fillRect(-5, 3, 10, 2);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(-7, -5, 2, 2);
+      ctx.fillRect(4, -5, 2, 2);
+      ctx.restore();
 
       rafRef.current = requestAnimationFrame(loop);
     };
@@ -1976,6 +2406,21 @@ function MenuScreen({ onPlay, onLevelSelect, onSkins }: { onPlay: () => void; on
         display: 'flex', flexDirection: 'column', alignItems: 'center',
         justifyContent: 'center', fontFamily: 'monospace',
       }}>
+        {/* Кнопка полноэкранного режима */}
+        <button
+          onClick={requestFullscreen}
+          title="Fullscreen"
+          style={{
+            position: 'absolute', top: 10, right: 10,
+            background: 'rgba(0,0,0,0.4)', border: '1px solid #555',
+            borderRadius: 6, color: '#888', cursor: 'pointer',
+            padding: '4px 8px', fontSize: 18, fontFamily: 'monospace',
+            lineHeight: 1,
+          }}
+        >
+          ⛶
+        </button>
+
         {/* Декоративные неоновые линии */}
         <div style={{
           position: 'absolute', top: 0, left: 0, right: 0, height: 3,
@@ -2006,6 +2451,9 @@ function MenuScreen({ onPlay, onLevelSelect, onSkins }: { onPlay: () => void; on
         </button>
         <button onClick={onLevelSelect} style={neonBtnStyle('#3355ff')}>
           Выбор уровня
+        </button>
+        <button onClick={onShop} style={neonBtnStyle('#cc44ff')}>
+          Магазин
         </button>
         <button onClick={onSkins} style={neonBtnStyle('#cc8800')}>
           Скины
@@ -2088,7 +2536,7 @@ function LevelPreview({ levelId }: { levelId: number }) {
   return <canvas ref={canvasRef} width={120} height={50} style={{ borderRadius: 6, display: 'block', marginBottom: 4 }} />;
 }
 
-function LevelSelectScreen({ onStart, onBack }: { onStart: (id: number) => void; onBack: () => void }) {
+function LevelSelectScreen({ onStart, onBack, onUpgrades }: { onStart: (id: number) => void; onBack: () => void; onUpgrades: () => void }) {
   const progress = loadProgress();
 
   return (
@@ -2195,16 +2643,29 @@ function LevelSelectScreen({ onStart, onBack }: { onStart: (id: number) => void;
         })}
       </div>
 
-      <button
-        onClick={onBack}
-        style={{
-          marginTop: 28, padding: '10px 28px', background: 'transparent',
-          border: '1px solid #555', borderRadius: 8, color: '#888',
-          cursor: 'pointer', fontFamily: 'monospace', fontSize: 14,
-        }}
-      >
-        Назад
-      </button>
+      <div style={{ display: 'flex', gap: 12, marginTop: 28 }}>
+        <button
+          onClick={onUpgrades}
+          style={{
+            padding: '10px 24px', background: 'rgba(100,50,200,0.2)',
+            border: '1px solid #8844ff', borderRadius: 8, color: '#cc88ff',
+            cursor: 'pointer', fontFamily: 'monospace', fontSize: 14,
+            boxShadow: '0 0 12px rgba(136,68,255,0.3)',
+          }}
+        >
+          ⚡ Усиления
+        </button>
+        <button
+          onClick={onBack}
+          style={{
+            padding: '10px 24px', background: 'transparent',
+            border: '1px solid #555', borderRadius: 8, color: '#888',
+            cursor: 'pointer', fontFamily: 'monospace', fontSize: 14,
+          }}
+        >
+          Назад
+        </button>
+      </div>
     </div>
   );
 }
@@ -2326,4 +2787,234 @@ function SkinSelectScreen({ onBack }: { onBack: () => void }) {
       </button>
     </div>
   );
+}
+
+// --- Shop Screen ---
+
+function ShopScreen({ onBack }: { onBack: () => void }) {
+  const [progress, setProgress] = useState(() => loadProgress());
+
+  const handleBuy = (id: UpgradeType, cost: number) => {
+    const ok = buyUpgrade(id, cost);
+    if (ok) setProgress(loadProgress());
+  };
+
+  return (
+    <div style={{
+      width: CANVAS_WIDTH, maxWidth: '100%', height: CANVAS_HEIGHT,
+      background: COLORS.bg, display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', borderRadius: 12,
+      fontFamily: 'monospace', position: 'relative',
+    }}>
+      {/* Заголовок */}
+      <div style={{
+        fontSize: 28, fontWeight: 'bold', color: '#cc44ff', marginBottom: 8,
+        textShadow: '0 0 20px rgba(204,68,255,0.5)',
+      }}>
+        Магазин
+      </div>
+
+      {/* Баланс монет */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, marginBottom: 28,
+        background: 'rgba(255,220,0,0.1)', borderRadius: 20, padding: '6px 18px',
+        border: '1px solid rgba(255,220,0,0.3)',
+      }}>
+        <span style={{ fontSize: 18 }}>🪙</span>
+        <span style={{ fontSize: 20, fontWeight: 'bold', color: '#ffdd00' }}>
+          {progress.coins}
+        </span>
+        <span style={{ fontSize: 12, color: '#aa9900' }}>монет</span>
+      </div>
+
+      {/* Карточки апгрейдов */}
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 560 }}>
+        {UPGRADES.map((upg) => {
+          const owned = progress.ownedUpgrades?.[upg.id] ?? 0;
+          const canBuy = progress.coins >= upg.cost;
+
+          return (
+            <div
+              key={upg.id}
+              style={{
+                width: 120, borderRadius: 14, padding: '14px 10px',
+                border: `2px solid ${upg.color}44`,
+                background: `rgba(${hexToRgb(upg.color)},0.07)`,
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                boxShadow: `0 0 12px ${upg.color}22`,
+              }}
+            >
+              <div style={{ fontSize: 32, marginBottom: 4 }}>{upg.icon}</div>
+              <div style={{ fontSize: 12, fontWeight: 'bold', color: upg.color, marginBottom: 4, textAlign: 'center' }}>
+                {upg.name}
+              </div>
+              <div style={{ fontSize: 10, color: '#888', textAlign: 'center', marginBottom: 8, lineHeight: '1.4' }}>
+                {upg.desc}
+              </div>
+              {/* Количество в инвентаре */}
+              <div style={{ fontSize: 11, color: '#aaa', marginBottom: 6 }}>
+                В запасе: <span style={{ color: '#fff', fontWeight: 'bold' }}>{owned}</span>
+              </div>
+              {/* Кнопка купить */}
+              <button
+                onClick={() => handleBuy(upg.id, upg.cost)}
+                disabled={!canBuy}
+                style={{
+                  padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 'bold',
+                  border: 'none', cursor: canBuy ? 'pointer' : 'default',
+                  background: canBuy ? upg.color : '#444',
+                  color: canBuy ? '#000' : '#666',
+                  boxShadow: canBuy ? `0 0 8px ${upg.color}88` : 'none',
+                  fontFamily: 'monospace',
+                }}
+              >
+                🪙 {upg.cost}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      <button
+        onClick={onBack}
+        style={{
+          marginTop: 28, padding: '10px 28px', background: 'transparent',
+          border: '1px solid #555', borderRadius: 8, color: '#888',
+          cursor: 'pointer', fontFamily: 'monospace', fontSize: 14,
+        }}
+      >
+        Назад
+      </button>
+    </div>
+  );
+}
+
+// --- Upgrades Screen ---
+
+function UpgradesScreen({ onBack }: { onBack: () => void }) {
+  const [progress, setProgress] = useState(() => loadProgress());
+
+  const handleActivate = (id: UpgradeType) => {
+    activateUpgrade(id);
+    setProgress(loadProgress());
+  };
+
+  const handleDeactivate = (id: UpgradeType) => {
+    deactivateUpgrade(id);
+    setProgress(loadProgress());
+  };
+
+  const activeUpgrades = progress.activeUpgrades ?? [];
+
+  return (
+    <div style={{
+      width: CANVAS_WIDTH, maxWidth: '100%', height: CANVAS_HEIGHT,
+      background: COLORS.bg, display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', borderRadius: 12,
+      fontFamily: 'monospace', position: 'relative',
+    }}>
+      <div style={{
+        fontSize: 28, fontWeight: 'bold', color: '#8844ff', marginBottom: 6,
+        textShadow: '0 0 20px rgba(136,68,255,0.5)',
+      }}>
+        Усиления
+      </div>
+      <div style={{ fontSize: 13, color: '#666', marginBottom: 24, textAlign: 'center' }}>
+        Активируй перед началом уровня.<br />
+        Активированное усиление будет потрачено.
+      </div>
+
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 560 }}>
+        {UPGRADES.map((upg) => {
+          const owned = progress.ownedUpgrades?.[upg.id] ?? 0;
+          const isActive = activeUpgrades.includes(upg.id);
+
+          return (
+            <div
+              key={upg.id}
+              style={{
+                width: 120, borderRadius: 14, padding: '14px 10px',
+                border: `2px solid ${isActive ? upg.color : upg.color + '44'}`,
+                background: isActive ? `rgba(${hexToRgb(upg.color)},0.15)` : `rgba(${hexToRgb(upg.color)},0.05)`,
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                boxShadow: isActive ? `0 0 18px ${upg.color}44` : 'none',
+                transition: 'all 0.2s',
+              }}
+            >
+              <div style={{ fontSize: 32, marginBottom: 4 }}>{upg.icon}</div>
+              <div style={{ fontSize: 12, fontWeight: 'bold', color: upg.color, marginBottom: 4, textAlign: 'center' }}>
+                {upg.name}
+              </div>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>
+                В запасе: <span style={{ color: '#fff', fontWeight: 'bold' }}>{owned}</span>
+              </div>
+
+              {/* Активировать / Деактивировать */}
+              {isActive ? (
+                <button
+                  onClick={() => handleDeactivate(upg.id)}
+                  style={{
+                    padding: '6px 10px', borderRadius: 8, fontSize: 11, fontWeight: 'bold',
+                    border: `1px solid ${upg.color}`, cursor: 'pointer',
+                    background: 'transparent', color: upg.color,
+                    fontFamily: 'monospace',
+                  }}
+                >
+                  ✓ Активно
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleActivate(upg.id)}
+                  disabled={owned === 0}
+                  style={{
+                    padding: '6px 10px', borderRadius: 8, fontSize: 11, fontWeight: 'bold',
+                    border: 'none', cursor: owned > 0 ? 'pointer' : 'default',
+                    background: owned > 0 ? upg.color : '#333',
+                    color: owned > 0 ? '#000' : '#555',
+                    boxShadow: owned > 0 ? `0 0 8px ${upg.color}88` : 'none',
+                    fontFamily: 'monospace',
+                  }}
+                >
+                  {owned > 0 ? 'Активировать' : 'Нет'}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {activeUpgrades.length > 0 && (
+        <div style={{
+          marginTop: 20, padding: '8px 16px', background: 'rgba(136,68,255,0.15)',
+          border: '1px solid #8844ff55', borderRadius: 10, fontSize: 12, color: '#cc88ff',
+        }}>
+          Активировано: {activeUpgrades.map((id) => {
+            const upg = UPGRADES.find((u) => u.id === id);
+            return upg ? `${upg.icon} ${upg.name}` : id;
+          }).join(', ')}
+        </div>
+      )}
+
+      <button
+        onClick={onBack}
+        style={{
+          marginTop: 20, padding: '10px 28px', background: 'transparent',
+          border: '1px solid #555', borderRadius: 8, color: '#888',
+          cursor: 'pointer', fontFamily: 'monospace', fontSize: 14,
+        }}
+      >
+        Назад к уровням
+      </button>
+    </div>
+  );
+}
+
+// --- Utility ---
+
+/** Конвертирует hex-цвет в строку 'r,g,b' для rgba() */
+function hexToRgb(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `${r},${g},${b}`;
 }

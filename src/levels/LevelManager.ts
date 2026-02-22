@@ -61,6 +61,9 @@ export class LevelManager {
       bossesDefeated: [],
       unlockedSkins: ['green'],
       currentSkin: 'green',
+      coins: 0,
+      ownedUpgrades: { magnet: 0, double_jump: 0, armor: 0, super_bullet: 0 },
+      activeUpgrades: [],
     };
     saveProgress(this.progress);
   }

@@ -27,6 +27,12 @@ export class Player {
   invincibleTimer = 0;
   corridorMode = false;
 
+  // Апгрейды
+  hasDoubleJump = false;
+  doubleJumpAvailable = false; // сброс при приземлении
+  magnetTimer = 0;          // кадры магнита
+  superBulletTimer = 0;     // кадры суперпули
+
   // Визуальные эффекты
   squashTimer = 0;
   private trail: Array<{ x: number; y: number }> = [];
@@ -44,6 +50,26 @@ export class Player {
     this.skinGlow = Player.hexToGlow(this.skinColor);
   }
 
+  /** Рисует скруглённый прямоугольник (fallback если roundRect недоступен) */
+  static roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+    const rr = ctx as CanvasRenderingContext2D & { roundRect?: (...a: unknown[]) => void };
+    if (rr.roundRect) {
+      rr.roundRect(x, y, w, h, r);
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.arcTo(x + w, y, x + w, y + r, r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+      ctx.lineTo(x + r, y + h);
+      ctx.arcTo(x, y + h, x, y + h - r, r);
+      ctx.lineTo(x, y + r);
+      ctx.arcTo(x, y, x + r, y, r);
+      ctx.closePath();
+    }
+  }
+
   /** Конвертирует hex-цвет в rgba для glow-эффекта */
   static hexToGlow(hex: string): string {
     const r = parseInt(hex.slice(1, 3), 16);
@@ -56,7 +82,18 @@ export class Player {
     if (this.onGround) {
       this.vy = JUMP_FORCE;
       this.onGround = false;
+      this.doubleJumpAvailable = this.hasDoubleJump;
     }
+  }
+
+  /** Второй прыжок в воздухе. Возвращает true если выполнен. */
+  doubleJump(): boolean {
+    if (this.hasDoubleJump && this.doubleJumpAvailable && !this.onGround) {
+      this.vy = JUMP_FORCE;
+      this.doubleJumpAvailable = false;
+      return true;
+    }
+    return false;
   }
 
   fly(): void {
@@ -65,6 +102,9 @@ export class Player {
       if (this.vy < -5) this.vy = -5;
     }
   }
+
+  isMagnetActive(): boolean { return this.magnetTimer > 0; }
+  isSuperBullet(): boolean { return this.superBulletTimer > 0; }
 
   takeDamage(amount = 1): boolean {
     if (this.invincibleTimer > 0 || this.shieldTimer > 0) {
@@ -126,6 +166,9 @@ export class Player {
     if (this.invincibleTimer > 0) this.invincibleTimer--;
     if (this.shootCooldown > 0) this.shootCooldown--;
     if (this.squashTimer > 0) this.squashTimer--;
+    if (this.magnetTimer > 0) this.magnetTimer--;
+    if (this.superBulletTimer > 0) this.superBulletTimer--;
+    if (this.onGround) this.doubleJumpAvailable = this.hasDoubleJump;
 
     // Обновление трейла (запоминаем последние 5 позиций)
     this.trail.push({ x: this.x, y: this.y });
@@ -136,63 +179,104 @@ export class Player {
     if (!this.alive) return;
     if (this.invincibleTimer > 0 && frame % 4 < 2) return; // Мерцание
 
-    // === Трейл (затухающие полупрозрачные квадраты) ===
+    const hw = this.width / 2;
+    const hh = this.height / 2;
+
+    // === Трейл: плавно затухающая полоса (7 прямоугольников) ===
     if (!this.isRocketMode() && !this.corridorMode) {
       for (let i = 0; i < this.trail.length - 1; i++) {
         const trailPos = this.trail[i];
-        const alpha = ((i + 1) / this.trail.length) * 0.2;
-        const size = this.width * (0.5 + (i / this.trail.length) * 0.4);
+        const t = (i + 1) / this.trail.length; // 0..1
+        const alpha = t * t * 0.25;
+        const size = this.width * (0.3 + t * 0.55);
         ctx.globalAlpha = alpha;
         ctx.fillStyle = this.skinColor;
-        ctx.fillRect(
-          trailPos.x + (this.width - size) / 2,
-          trailPos.y + (this.height - size) / 2,
-          size, size,
-        );
+        const tx = trailPos.x + (this.width - size) / 2;
+        const ty = trailPos.y + (this.height - size) / 2;
+        ctx.beginPath();
+        if ((ctx as CanvasRenderingContext2D & { roundRect?: (...a: unknown[]) => void }).roundRect) {
+          (ctx as CanvasRenderingContext2D & { roundRect: (...a: unknown[]) => void }).roundRect(tx, ty, size, size, 3);
+        } else {
+          ctx.rect(tx, ty, size, size);
+        }
+        ctx.fill();
       }
       ctx.globalAlpha = 1;
     }
 
     ctx.save();
-    ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+    ctx.translate(this.x + hw, this.y + hh);
 
     if (this.isRocketMode() || this.corridorMode) {
       // Режим ракеты / коридора
       ctx.rotate(frame * 0.3);
+      // Внешнее свечение
       ctx.shadowColor = COLORS.rocket;
-      ctx.shadowBlur = 20;
+      ctx.shadowBlur = 25;
       ctx.fillStyle = COLORS.rocket;
       ctx.beginPath();
-      ctx.moveTo(this.width / 2 + 8, 0);
-      ctx.lineTo(-this.width / 2, -this.height / 2 - 2);
-      ctx.lineTo(-this.width / 2, this.height / 2 + 2);
+      ctx.moveTo(hw + 8, 0);
+      ctx.lineTo(-hw, -hh - 2);
+      ctx.lineTo(-hw, hh + 2);
       ctx.closePath();
       ctx.fill();
+      // Внутренний яркий блик
+      ctx.shadowBlur = 8;
+      ctx.globalAlpha = 0.6;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.moveTo(hw + 2, 0);
+      ctx.lineTo(-hw + 4, -hh + 4);
+      ctx.lineTo(-hw + 4, hh - 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalAlpha = 1;
       ctx.shadowBlur = 0;
     } else {
       // === Squash-stretch при приземлении ===
-      const squashProgress = this.squashTimer / 8; // 1 → 0
-      const scaleX = 1 + squashProgress * 0.25;   // 1.25 → 1.0
-      const scaleY = 1 - squashProgress * 0.2;    // 0.8 → 1.0
+      const squashProgress = this.squashTimer / 8;
+      const scaleX = 1 + squashProgress * 0.25;
+      const scaleY = 1 - squashProgress * 0.2;
       ctx.scale(scaleX, scaleY);
 
-      // Обычный куб
       ctx.rotate((this.rotation * Math.PI) / 180);
-      ctx.shadowColor = this.skinGlow;
-      ctx.shadowBlur = 15;
+
+      // Внешнее мягкое свечение (25px)
+      ctx.shadowColor = this.skinColor;
+      ctx.shadowBlur = 25;
+      ctx.fillStyle = this.skinColor + '44';
+      Player.roundRect(ctx, -hw - 3, -hh - 3, this.width + 6, this.height + 6, 6);
+      ctx.fill();
+
+      // Внутренний яркий glow (10px) + тело
+      ctx.shadowBlur = 10;
       ctx.fillStyle = this.skinColor;
-      ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
+      Player.roundRect(ctx, -hw, -hh, this.width, this.height, 4);
+      ctx.fill();
       ctx.shadowBlur = 0;
 
-      // Лицо — глаза смотрят в направлении движения
-      let eyeOffsetY = -5;
-      if (this.vy < -3) eyeOffsetY = -7; // Вверх при прыжке
-      else if (this.vy > 3) eyeOffsetY = -3; // Вниз при падении
+      // Блик (highlight) — верхний светлый край
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = '#ffffff';
+      Player.roundRect(ctx, -hw + 2, -hh + 2, this.width - 4, 6, 3);
+      ctx.fill();
+      ctx.globalAlpha = 1;
 
+      // Лицо — глаза с бликами
+      let eyeOffsetY = -5;
+      if (this.vy < -3) eyeOffsetY = -7;
+      else if (this.vy > 3) eyeOffsetY = -3;
+
+      // Глаза (чуть крупнее)
       ctx.fillStyle = '#000';
-      ctx.fillRect(-7, eyeOffsetY, 4, 4); // Левый глаз
-      ctx.fillRect(3, eyeOffsetY, 4, 4);  // Правый глаз
-      ctx.fillRect(-5, 3, 10, 2);         // Рот
+      ctx.fillRect(-8, eyeOffsetY, 5, 5);
+      ctx.fillRect(3, eyeOffsetY, 5, 5);
+      // Рот
+      ctx.fillRect(-5, 3, 10, 2);
+      // Блики на глазах (2x2 белый пиксель)
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(-7, eyeOffsetY, 2, 2);
+      ctx.fillRect(4, eyeOffsetY, 2, 2);
     }
 
     ctx.restore();

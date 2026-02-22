@@ -199,6 +199,35 @@ const level3: LevelData = {
     { x: 14010, y: GROUND_Y - 130, skinId: 'blue' },
   ],
 
+  coins: [
+    // Группа 1: вход
+    { x: 300,  y: GROUND_Y - 55 },
+    { x: 360,  y: GROUND_Y - 55 },
+    { x: 420,  y: GROUND_Y - 55 },
+    // Группа 2: дуга
+    { x: 1800, y: GROUND_Y - 70 },
+    { x: 1860, y: GROUND_Y - 100 },
+    { x: 1920, y: GROUND_Y - 70 },
+    // Группа 3: на платформе
+    { x: 3200, y: GROUND_Y - 120 },
+    { x: 3260, y: GROUND_Y - 120 },
+    { x: 3320, y: GROUND_Y - 120 },
+    // Группа 4
+    { x: 5500, y: GROUND_Y - 65 },
+    { x: 5560, y: GROUND_Y - 65 },
+    // Группа 5: в воздухе
+    { x: 7300, y: GROUND_Y - 130 },
+    { x: 7360, y: GROUND_Y - 150 },
+    { x: 7420, y: GROUND_Y - 130 },
+    // Группа 6: перед коридором
+    { x: 10600, y: GROUND_Y - 65 },
+    { x: 10660, y: GROUND_Y - 65 },
+    { x: 10720, y: GROUND_Y - 65 },
+    // Группа 7: финал
+    { x: 14800, y: GROUND_Y - 70 },
+    { x: 14860, y: GROUND_Y - 70 },
+  ],
+
   rocketCorridor: {
     startX: 11000,
     endX: 14000,

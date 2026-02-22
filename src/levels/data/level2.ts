@@ -156,6 +156,35 @@ const level2: LevelData = {
     { x: 7920, y: GROUND_Y - 150, skinId: 'white' },
   ],
 
+  coins: [
+    // Группа 1
+    { x: 500,  y: GROUND_Y - 60 },
+    { x: 560,  y: GROUND_Y - 60 },
+    { x: 620,  y: GROUND_Y - 60 },
+    // Группа 2: дуга
+    { x: 1600, y: GROUND_Y - 70 },
+    { x: 1660, y: GROUND_Y - 95 },
+    { x: 1720, y: GROUND_Y - 70 },
+    // Группа 3: на платформе (нужен прыжок)
+    { x: 2700, y: GROUND_Y - 130 },
+    { x: 2760, y: GROUND_Y - 130 },
+    { x: 2820, y: GROUND_Y - 130 },
+    // Группа 4
+    { x: 4200, y: GROUND_Y - 60 },
+    { x: 4260, y: GROUND_Y - 80 },
+    { x: 4320, y: GROUND_Y - 60 },
+    // Группа 5: над врагами
+    { x: 5800, y: GROUND_Y - 90 },
+    { x: 5860, y: GROUND_Y - 90 },
+    // Группа 6: перед коридором
+    { x: 8700, y: GROUND_Y - 60 },
+    { x: 8760, y: GROUND_Y - 60 },
+    { x: 8820, y: GROUND_Y - 60 },
+    // Группа 7: финал
+    { x: 11300, y: GROUND_Y - 80 },
+    { x: 11360, y: GROUND_Y - 80 },
+  ],
+
   rocketCorridor: { startX: 9000, endX: 10500 },
 
   boss: {
