@@ -101,26 +101,15 @@ const level3: LevelData = {
     { x: 10620, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
     { x: 10800, y: GROUND_Y - 130, width: 70, height: 15, type: 'moving_platform', moveRange: 50, moveSpeed: 1.3, moveAxis: 'y' },
     { x: 10950, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
-    // (Ракетный коридор: 11000-12500 — препятствия убраны)
+    // (Ракетный коридор: 11000-14000 — препятствия убраны)
 
-    // === Секция 6 (12500-15000): Зал испытаний ===
-    { x: 12600, y: GROUND_Y - 80, width: 80, height: 15, type: 'moving_platform', moveRange: 60, moveSpeed: 1.6, moveAxis: 'y' },
-    { x: 12750, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
-    { x: 12900, y: GROUND_Y - 50, width: 70, height: 15, type: 'moving_platform', moveRange: 90, moveSpeed: 2.2, moveAxis: 'x' },
-    { x: 13050, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
-    { x: 13200, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
-    { x: 13260, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
-    { x: 13320, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
-    { x: 13500, y: GROUND_Y - 110, width: 90, height: 15, type: 'platform' },
-    { x: 13650, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
-    { x: 13800, y: GROUND_Y - 70, width: 70, height: 15, type: 'moving_platform', moveRange: 50, moveSpeed: 1.5, moveAxis: 'y' },
-    { x: 13950, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
-    { x: 14100, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
-    { x: 14160, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
-    { x: 14300, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
-    { x: 14400, y: GROUND_Y - 90, width: 80, height: 15, type: 'platform' },
+    // === Секция 6 (14000-15000): Зал испытаний ===
+    { x: 14100, y: GROUND_Y - 80, width: 80, height: 15, type: 'moving_platform', moveRange: 60, moveSpeed: 1.6, moveAxis: 'y' },
+    { x: 14250, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 14400, y: GROUND_Y - 50, width: 70, height: 15, type: 'moving_platform', moveRange: 90, moveSpeed: 2.2, moveAxis: 'x' },
     { x: 14550, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
-    { x: 14700, y: GROUND_Y - 60, width: 70, height: 15, type: 'moving_platform', moveRange: 80, moveSpeed: 2.0, moveAxis: 'x' },
+    { x: 14700, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 14760, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
     { x: 14850, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
 
     // === Секция 7 (15000-16500): Финальная полоса ===
@@ -210,7 +199,25 @@ const level3: LevelData = {
     { x: 14010, y: GROUND_Y - 130, skinId: 'blue' },
   ],
 
-  rocketCorridor: { startX: 11000, endX: 12500 },
+  rocketCorridor: {
+    startX: 11000,
+    endX: 14000,
+    gapSizeFunc: 'variable',
+    rotatingBlocks: [
+      { offsetX: 500,  gapOffset: -0.25, size: 20 },
+      { offsetX: 900,  gapOffset:  0.25, size: 20 },
+      { offsetX: 1300, gapOffset:  0,    size: 20 },
+      { offsetX: 1700, gapOffset: -0.2,  size: 20 },
+      { offsetX: 2100, gapOffset:  0.2,  size: 20 },
+      { offsetX: 2500, gapOffset:  0,    size: 20 },
+      { offsetX: 2800, gapOffset: -0.3,  size: 20 },
+    ],
+    coins: [
+      { offsetX: 700,  gapOffset: 0 },
+      { offsetX: 1100, gapOffset: 0 },
+      { offsetX: 2300, gapOffset: 0 },
+    ],
+  },
 
   boss: {
     type: 'frost_king',

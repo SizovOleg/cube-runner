@@ -294,8 +294,16 @@ function drawObstacles(ctx: CanvasRenderingContext2D, obstacles: readonly Obstac
   }
 }
 
+/** Вычисляет центр зазора и его размер для заданной мировой координаты */
+function getCorridorGap(wx: number, frame: number, corridor: RocketCorridorData): { center: number; size: number } {
+  const center = 170 + Math.sin(wx * 0.004) * 80;
+  const size = corridor.gapSizeFunc === 'variable'
+    ? 120 + Math.sin(wx * 0.0025 + frame * 0.01) * 30
+    : 120;
+  return { center, size };
+}
+
 function drawCorridor(ctx: CanvasRenderingContext2D, corridor: RocketCorridorData, camera: Camera, frame: number): void {
-  const CORRIDOR_GAP = 120;
   const startScreen = camera.worldToScreen(corridor.startX);
   const endScreen = camera.worldToScreen(corridor.endX);
 
@@ -350,9 +358,9 @@ function drawCorridor(ctx: CanvasRenderingContext2D, corridor: RocketCorridorDat
     const sx = camera.worldToScreen(wx);
     if (sx > CANVAS_WIDTH + 40 || sx < -40) continue;
 
-    const gapCenter = 170 + Math.sin(wx * 0.004) * 80;
-    const ceilingY = gapCenter - CORRIDOR_GAP / 2;
-    const floorY = gapCenter + CORRIDOR_GAP / 2;
+    const { center: gapCenter, size: gapSize } = getCorridorGap(wx, frame, corridor);
+    const ceilingY = gapCenter - gapSize / 2;
+    const floorY = gapCenter + gapSize / 2;
 
     // Стена сверху (тёмная)
     ctx.fillStyle = '#1a0a2e';
@@ -381,6 +389,92 @@ function drawCorridor(ctx: CanvasRenderingContext2D, corridor: RocketCorridorDat
     ctx.closePath();
     ctx.fill();
     ctx.shadowBlur = 0;
+  }
+
+  // === Движущиеся шипы (уровень 1) ===
+  if (corridor.movingSpikes) {
+    for (const ms of corridor.movingSpikes) {
+      const wx = corridor.startX + ms.offsetX;
+      const sx = camera.worldToScreen(wx);
+      if (sx < -30 || sx > CANVAS_WIDTH + 30) continue;
+
+      const { center: gapCenter, size: gapSize } = getCorridorGap(wx, frame, corridor);
+      // Шип двигается синусоидой внутри зазора
+      const spikeY = gapCenter + Math.sin(frame * ms.speed + ms.phase) * ms.amplitude;
+      const spikeSize = 18;
+
+      ctx.fillStyle = '#ff6600';
+      ctx.shadowColor = '#ff6600';
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.moveTo(sx - spikeSize, spikeY);
+      ctx.lineTo(sx, spikeY - spikeSize);
+      ctx.lineTo(sx + spikeSize, spikeY);
+      ctx.lineTo(sx, spikeY + spikeSize);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Проверка: если шип у края — не выходит за стены
+      const halfGap = gapSize / 2;
+      const ceilingY = gapCenter - halfGap;
+      const floorY = gapCenter + halfGap;
+      if (spikeY - spikeSize < ceilingY || spikeY + spikeSize > floorY) {
+        // Визуальный клип не нужен — шипы стен перекрывают
+      }
+    }
+  }
+
+  // === Вращающиеся блоки (уровень 3) ===
+  if (corridor.rotatingBlocks) {
+    for (const rb of corridor.rotatingBlocks) {
+      const wx = corridor.startX + rb.offsetX;
+      const sx = camera.worldToScreen(wx);
+      if (sx < -40 || sx > CANVAS_WIDTH + 40) continue;
+
+      const { center: gapCenter, size: gapSize } = getCorridorGap(wx, frame, corridor);
+      const blockY = gapCenter + rb.gapOffset * (gapSize / 2 - rb.size);
+      const angle = frame * 0.05;
+      const half = rb.size / 2;
+
+      ctx.save();
+      ctx.translate(sx, blockY);
+      ctx.rotate(angle);
+      ctx.fillStyle = '#aa44ff';
+      ctx.shadowColor = '#aa44ff';
+      ctx.shadowBlur = 12;
+      ctx.fillRect(-half, -half, rb.size, rb.size);
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = '#cc88ff';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-half, -half, rb.size, rb.size);
+      ctx.restore();
+    }
+  }
+
+  // === Монеты в коридоре ===
+  if (corridor.coins) {
+    for (const coin of corridor.coins) {
+      const wx = corridor.startX + coin.offsetX;
+      const sx = camera.worldToScreen(wx);
+      if (sx < -20 || sx > CANVAS_WIDTH + 20) continue;
+
+      const { center: gapCenter, size: gapSize } = getCorridorGap(wx, frame, corridor);
+      const coinY = gapCenter + coin.gapOffset * (gapSize / 2 - 12);
+
+      ctx.fillStyle = '#ffdd00';
+      ctx.shadowColor = '#ffdd00';
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.arc(sx, coinY, 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#ffaa00';
+      ctx.font = 'bold 9px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('$', sx, coinY + 3);
+      ctx.textAlign = 'left';
+    }
   }
 
   // Граница входа (красная линия)
@@ -635,6 +729,11 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
         // Авто-движение (только если не в босс-бою)
         if (bossPhase !== 'fight') {
           player.x += speed;
+        } else {
+          // В арене: ручное управление влево/вправо
+          const ARENA_SPEED = 4;
+          if (inp.moveLeft) player.x -= ARENA_SPEED;
+          if (inp.moveRight) player.x += ARENA_SPEED;
         }
 
         if (inp.jump && player.onGround) {
@@ -976,30 +1075,73 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
 
       // Коллизия с шипами коридора (процедурные)
       if (corridorMode && corridor) {
-        const CORRIDOR_GAP = 120;
         const playerCX = player.x + player.width / 2;
-        const gapCenter = 170 + Math.sin(playerCX * 0.004) * 80;
-        const ceilingBottom = gapCenter - CORRIDOR_GAP / 2;
-        const floorTop = gapCenter + CORRIDOR_GAP / 2;
+        const { center: gapCenter, size: gapSize } = getCorridorGap(playerCX, frame, corridor);
+        const ceilingBottom = gapCenter - gapSize / 2;
+        const floorTop = gapCenter + gapSize / 2;
+
+        const dieInCorridor = () => {
+          particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, COLORS.spike, 15);
+          setDeath({ score: Math.floor(camera.x / 10), kills });
+        };
+
         if (player.y < ceilingBottom) {
-          const died = player.takeDamage(1);
-          if (died) {
-            particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, COLORS.spike, 15);
-            setDeath({ score: Math.floor(camera.x / 10), kills });
-            return;
-          }
+          if (player.takeDamage(1)) { dieInCorridor(); return; }
           player.y = ceilingBottom;
           player.vy = 1;
         }
         if (player.y + player.height > floorTop) {
-          const died = player.takeDamage(1);
-          if (died) {
-            particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, COLORS.spike, 15);
-            setDeath({ score: Math.floor(camera.x / 10), kills });
-            return;
-          }
+          if (player.takeDamage(1)) { dieInCorridor(); return; }
           player.y = floorTop - player.height;
           player.vy = -1;
+        }
+
+        // Коллизия с движущимися шипами
+        if (corridor.movingSpikes) {
+          for (const ms of corridor.movingSpikes) {
+            const spikeWX = corridor.startX + ms.offsetX;
+            if (Math.abs(playerCX - spikeWX) > 40) continue;
+            const spikeY = gapCenter + Math.sin(frame * ms.speed + ms.phase) * ms.amplitude;
+            const SPIKE_R = 18;
+            const px = player.x, py = player.y, pw = player.width, ph = player.height;
+            if (px < spikeWX + SPIKE_R && px + pw > spikeWX - SPIKE_R &&
+                py < spikeY + SPIKE_R && py + ph > spikeY - SPIKE_R) {
+              if (player.takeDamage(1)) { dieInCorridor(); return; }
+            }
+          }
+        }
+
+        // Коллизия с вращающимися блоками
+        if (corridor.rotatingBlocks) {
+          for (const rb of corridor.rotatingBlocks) {
+            const blockWX = corridor.startX + rb.offsetX;
+            if (Math.abs(playerCX - blockWX) > rb.size + player.width) continue;
+            const { center: bGapCenter, size: bGapSize } = getCorridorGap(blockWX, frame, corridor);
+            const blockY = bGapCenter + rb.gapOffset * (bGapSize / 2 - rb.size);
+            const half = rb.size / 2 + 4; // небольшой буфер
+            const px = player.x, py = player.y, pw = player.width, ph = player.height;
+            if (px < blockWX + half && px + pw > blockWX - half &&
+                py < blockY + half && py + ph > blockY - half) {
+              if (player.takeDamage(1)) { dieInCorridor(); return; }
+            }
+          }
+        }
+
+        // Сбор монет в коридоре
+        if (corridor.coins) {
+          for (let ci = corridor.coins.length - 1; ci >= 0; ci--) {
+            const coin = corridor.coins[ci];
+            const coinWX = corridor.startX + coin.offsetX;
+            if (Math.abs(playerCX - coinWX) > 30) continue;
+            const { center: cGapCenter, size: cGapSize } = getCorridorGap(coinWX, frame, corridor);
+            const coinY = cGapCenter + coin.gapOffset * (cGapSize / 2 - 12);
+            const py = player.y + player.height / 2;
+            if (Math.abs(py - coinY) < 20) {
+              corridor.coins.splice(ci, 1);
+              kills++; // монета как +score
+              particles.burst(camera.worldToScreen(coinWX), coinY, '#ffdd00', 8);
+            }
+          }
         }
       }
 
@@ -1405,6 +1547,24 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
     inputRef.current?.setJump(false);
   }, []);
 
+  // Кнопки влево/вправо (арена босса)
+  const handleLeftDown = useCallback((e: React.TouchEvent | React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    inputRef.current?.setMoveLeft(true);
+  }, []);
+  const handleLeftUp = useCallback((e: React.TouchEvent | React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    inputRef.current?.setMoveLeft(false);
+  }, []);
+  const handleRightDown = useCallback((e: React.TouchEvent | React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    inputRef.current?.setMoveRight(true);
+  }, []);
+  const handleRightUp = useCallback((e: React.TouchEvent | React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    inputRef.current?.setMoveRight(false);
+  }, []);
+
   // GUN button
   const handleGunDown = useCallback((e: React.TouchEvent | React.MouseEvent) => {
     e.preventDefault();
@@ -1569,6 +1729,35 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
           </button>
         );
       })}
+      {/* Кнопки ← → для арены босса */}
+      <button
+        onMouseDown={handleLeftDown} onMouseUp={handleLeftUp}
+        onTouchStart={handleLeftDown} onTouchEnd={handleLeftUp}
+        style={{
+          position: 'absolute', bottom: 62, left: 12,
+          width: 44, height: 44, borderRadius: 22,
+          border: '2px solid #3355ff', background: 'rgba(51,85,255,0.15)',
+          color: '#3355ff', fontSize: 20, fontWeight: 'bold',
+          cursor: 'pointer', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', touchAction: 'none',
+        }}
+      >
+        ←
+      </button>
+      <button
+        onMouseDown={handleRightDown} onMouseUp={handleRightUp}
+        onTouchStart={handleRightDown} onTouchEnd={handleRightUp}
+        style={{
+          position: 'absolute', bottom: 62, left: 62,
+          width: 44, height: 44, borderRadius: 22,
+          border: '2px solid #3355ff', background: 'rgba(51,85,255,0.15)',
+          color: '#3355ff', fontSize: 20, fontWeight: 'bold',
+          cursor: 'pointer', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', touchAction: 'none',
+        }}
+      >
+        →
+      </button>
     </div>
   );
 }

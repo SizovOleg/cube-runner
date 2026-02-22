@@ -52,12 +52,8 @@ const level1: LevelData = {
     { x: 6450, y: GROUND_Y - 60, width: 80, height: 15, type: 'platform' },
     { x: 6700, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
     { x: 6750, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
-    // (Ракетный коридор: 7000-8500 — препятствия убраны)
-    { x: 8600, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
-    { x: 8650, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
-    { x: 8900, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
-    { x: 9200, y: GROUND_Y - 70, width: 80, height: 15, type: 'platform' },
-    { x: 9500, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    // (Ракетный коридор: 7000-9500 — препятствия убраны)
+    { x: 9600, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
     { x: 9700, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
     { x: 9950, y: GROUND_Y - 60, width: 70, height: 15, type: 'platform' },
   ],
@@ -94,7 +90,23 @@ const level1: LevelData = {
     { x: 4960, y: GROUND_Y - 130, skinId: 'blue' },
   ],
 
-  rocketCorridor: { startX: 7000, endX: 8500 },
+  rocketCorridor: {
+    startX: 7000,
+    endX: 9500,
+    gapSizeFunc: 'constant',
+    movingSpikes: [
+      { offsetX: 400,  amplitude: 55, phase: 0,    speed: 0.04 },
+      { offsetX: 900,  amplitude: 40, phase: 1.5,  speed: 0.05 },
+      { offsetX: 1400, amplitude: 65, phase: 0.8,  speed: 0.035 },
+      { offsetX: 1900, amplitude: 50, phase: 2.1,  speed: 0.045 },
+      { offsetX: 2300, amplitude: 45, phase: 0.3,  speed: 0.06 },
+    ],
+    coins: [
+      { offsetX: 650,  gapOffset: 0 },
+      { offsetX: 1150, gapOffset: -0.3 },
+      { offsetX: 1650, gapOffset: 0.3 },
+    ],
+  },
 
   boss: {
     type: 'guardian',

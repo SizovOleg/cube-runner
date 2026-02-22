@@ -5,6 +5,8 @@
 export interface InputState {
   jump: boolean;
   shoot: boolean;
+  moveLeft: boolean;
+  moveRight: boolean;
   usePowerup: number | null; // 0, 1, 2 или null
   pause: boolean;
 }
@@ -13,6 +15,8 @@ export class Input {
   private state: InputState = {
     jump: false,
     shoot: false,
+    moveLeft: false,
+    moveRight: false,
     usePowerup: null,
     pause: false,
   };
@@ -49,6 +53,14 @@ export class Input {
     this.state.shoot = active;
   }
 
+  setMoveLeft(active: boolean): void {
+    this.state.moveLeft = active;
+  }
+
+  setMoveRight(active: boolean): void {
+    this.state.moveRight = active;
+  }
+
   triggerPowerup(slot: number): void {
     this.state.usePowerup = slot;
   }
@@ -68,6 +80,8 @@ export class Input {
   private reset(): void {
     this.state.jump = false;
     this.state.shoot = false;
+    this.state.moveLeft = false;
+    this.state.moveRight = false;
     this.state.usePowerup = null;
     this.state.pause = false;
   }
@@ -79,6 +93,16 @@ export class Input {
       case 'KeyW':
         e.preventDefault();
         this.state.jump = true;
+        break;
+      case 'ArrowLeft':
+      case 'KeyA':
+        e.preventDefault();
+        this.state.moveLeft = true;
+        break;
+      case 'ArrowRight':
+      case 'KeyD':
+        e.preventDefault();
+        this.state.moveRight = true;
         break;
       case 'KeyX':
       case 'KeyZ':
@@ -110,6 +134,14 @@ export class Input {
       case 'ArrowUp':
       case 'KeyW':
         this.state.jump = false;
+        break;
+      case 'ArrowLeft':
+      case 'KeyA':
+        this.state.moveLeft = false;
+        break;
+      case 'ArrowRight':
+      case 'KeyD':
+        this.state.moveRight = false;
         break;
       case 'KeyX':
       case 'KeyZ':

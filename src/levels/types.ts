@@ -49,10 +49,36 @@ export interface PowerupData {
   type: PowerupType;
 }
 
+// Движущийся шип в коридоре
+export interface CorridorMovingSpike {
+  offsetX: number;   // смещение от начала коридора
+  amplitude: number; // амплитуда движения (px)
+  phase: number;     // начальная фаза синусоиды
+  speed: number;     // скорость (рад/кадр)
+}
+
+// Вращающийся блок в коридоре
+export interface CorridorRotatingBlock {
+  offsetX: number;   // смещение от начала коридора
+  gapOffset: number; // смещение от центра зазора (-1..1)
+  size: number;      // размер блока (px)
+}
+
+// Монета в коридоре
+export interface CorridorCoin {
+  offsetX: number;
+  gapOffset: number; // смещение от центра зазора (-1..1, 0 = центр)
+}
+
 // Ракетный коридор
 export interface RocketCorridorData {
   startX: number;
   endX: number;
+  // Сужения/расширения: gapSize по умолчанию 120, можно задать переменный
+  gapSizeFunc?: 'constant' | 'variable'; // 'variable' = синусоида ±30px
+  movingSpikes?: CorridorMovingSpike[];
+  rotatingBlocks?: CorridorRotatingBlock[];
+  coins?: CorridorCoin[];
 }
 
 // Босс
