@@ -180,6 +180,12 @@ const level3: LevelData = {
     { x: 15800, y: GROUND_Y - 100, type: 'flying', patrolRange: 50 },
     { x: 16220, y: GROUND_Y - 120 - ENTITY_SIZE, type: 'shooter' },
     { x: 16400, y: GROUND_Y - ENTITY_SIZE, type: 'armored', patrolRange: 50 },
+
+    // Chomper-ы (4 штуки)
+    { x: 2100, y: GROUND_Y - ENTITY_SIZE, type: 'chomper' },
+    { x: 5500, y: GROUND_Y - ENTITY_SIZE, type: 'chomper' },
+    { x: 8600, y: GROUND_Y - ENTITY_SIZE, type: 'chomper' },
+    { x: 14800, y: GROUND_Y - ENTITY_SIZE, type: 'chomper' },
   ],
 
   powerups: [
@@ -226,6 +232,20 @@ const level3: LevelData = {
     // Группа 7: финал
     { x: 14800, y: GROUND_Y - 70 },
     { x: 14860, y: GROUND_Y - 70 },
+  ],
+
+  // Уровень 3: 4 падающих блока, 3 маятника
+  fallingBlocks: [
+    { x: 1900, y: GROUND_Y - 150, width: 60, height: 16 },
+    { x: 4600, y: GROUND_Y - 145, width: 65, height: 16 },
+    { x: 7300, y: GROUND_Y - 150, width: 60, height: 16 },
+    { x: 15400, y: GROUND_Y - 140, width: 70, height: 16 },
+  ],
+
+  pendulums: [
+    { x: 3500, y: GROUND_Y - 240, length: 140, amplitude: 1.0, phase: 0,   speed: 0.032, ballRadius: 15 },
+    { x: 6600, y: GROUND_Y - 220, length: 125, amplitude: 1.1, phase: 1.0, speed: 0.038, ballRadius: 15 },
+    { x: 9500, y: GROUND_Y - 250, length: 150, amplitude: 0.95, phase: 2.0, speed: 0.03,  ballRadius: 16 },
   ],
 
   rocketCorridor: {

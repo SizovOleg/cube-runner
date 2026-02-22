@@ -57,7 +57,7 @@ export const POWERUP_DURATION: Partial<Record<PowerupType, number>> = {
 };
 
 // Скины
-export type SkinId = 'green' | 'gold' | 'blue' | 'pink' | 'white' | 'orange';
+export type SkinId = 'green' | 'gold' | 'blue' | 'pink' | 'white' | 'orange' | 'red' | 'lava' | 'ember' | 'chrome' | 'neon' | 'void';
 
 export const SKIN_COLORS: Record<SkinId, string> = {
   green: '#00ff88',
@@ -66,6 +66,12 @@ export const SKIN_COLORS: Record<SkinId, string> = {
   pink: '#ff69b4',
   white: '#ffffff',
   orange: '#ff6600',
+  red: '#ff2200',
+  lava: '#ff6600',
+  ember: '#ff4400',
+  chrome: '#cccccc',
+  neon: '#00ffff',
+  void: '#220033',
 };
 
 export const SKIN_NAMES: Record<SkinId, string> = {
@@ -75,6 +81,12 @@ export const SKIN_NAMES: Record<SkinId, string> = {
   pink: 'Розовый',
   white: 'Алмаз',
   orange: 'Огонь',
+  red: 'Красный',
+  lava: 'Лава',
+  ember: 'Жар',
+  chrome: 'Хром',
+  neon: 'Неон+',
+  void: 'Пустота',
 };
 
 // Уровни

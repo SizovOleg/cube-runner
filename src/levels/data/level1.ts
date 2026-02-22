@@ -76,6 +76,11 @@ const level1: LevelData = {
     // Перед боссом
     { x: 5400, y: GROUND_Y - ENTITY_SIZE, type: 'basic' },
     { x: 5920, y: GROUND_Y - 80 - ENTITY_SIZE, type: 'basic' },
+
+    // Chomper-ы (агрессивные, бросаются на игрока)
+    { x: 2700, y: GROUND_Y - ENTITY_SIZE, type: 'chomper' },
+    { x: 4150, y: GROUND_Y - ENTITY_SIZE, type: 'chomper' },
+    { x: 6300, y: GROUND_Y - ENTITY_SIZE, type: 'chomper' },
   ],
 
   powerups: [
@@ -137,6 +142,14 @@ const level1: LevelData = {
       { offsetX: 1650, gapOffset: 0.3 },
     ],
   },
+
+  // Уровень 1: 3 chomper, 2 падающих блока, 0 маятников
+  fallingBlocks: [
+    // Над секцией 3 (двойные шипы)
+    { x: 3100, y: GROUND_Y - 120, width: 60, height: 16 },
+    // Перед боссом
+    { x: 5800, y: GROUND_Y - 140, width: 70, height: 16 },
+  ],
 
   boss: {
     type: 'guardian',

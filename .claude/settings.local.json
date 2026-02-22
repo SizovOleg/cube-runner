@@ -24,7 +24,18 @@
       "Bash(curl:*)",
       "Bash(git -C \"D:\\\\test\\\\cuberunner\" add -A)",
       "Bash(git -C \"D:\\\\test\\\\cuberunner\" commit -m \"feat: level 3 Frost King, visual polish all levels, animated menu\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\")",
-      "Bash(git -C \"D:\\\\test\\\\cuberunner\" push origin main)"
+      "Bash(git -C \"D:\\\\test\\\\cuberunner\" push origin main)",
+      "Bash(taskkill:*)",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_click",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__playwright__browser_evaluate",
+      "Bash(git status:*)",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__plugin_playwright_playwright__browser_click",
+      "mcp__plugin_playwright_playwright__browser_take_screenshot",
+      "mcp__plugin_playwright_playwright__browser_console_messages"
     ]
   }
 }

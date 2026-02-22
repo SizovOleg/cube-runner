@@ -39,7 +39,7 @@ export interface ObstacleData {
 }
 
 // Враги
-export type EnemyType = 'basic' | 'shooter' | 'flying' | 'armored';
+export type EnemyType = 'basic' | 'shooter' | 'flying' | 'armored' | 'chomper';
 
 export interface EnemyData {
   x: number;
@@ -95,6 +95,25 @@ export interface BossData {
   phases: number; // Количество фаз
 }
 
+// Падающий блок
+export interface FallingBlockData {
+  x: number;
+  y: number;       // начальная высота (висит в воздухе)
+  width: number;
+  height: number;
+}
+
+// Маятник
+export interface PendulumData {
+  x: number;       // точка крепления (мировые координаты)
+  y: number;       // точка крепления
+  length: number;  // длина цепи (px)
+  amplitude: number; // амплитуда качания (радианы)
+  phase: number;   // начальная фаза
+  speed: number;   // скорость (рад/кадр)
+  ballRadius: number;
+}
+
 // Данные уровня
 export interface LevelData {
   id: number;
@@ -113,6 +132,9 @@ export interface LevelData {
   cages?: CageData[];
   // Ракетный коридор (опционально)
   rocketCorridor?: RocketCorridorData;
+  // Новые динамические препятствия
+  fallingBlocks?: FallingBlockData[];
+  pendulums?: PendulumData[];
   // Декорации (опционально)
   decorations?: Array<{
     x: number;

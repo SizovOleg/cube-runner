@@ -140,6 +140,12 @@ const level2: LevelData = {
     { x: 12600, y: GROUND_Y - ENTITY_SIZE, type: 'basic' },
     { x: 13000, y: GROUND_Y - ENTITY_SIZE, type: 'basic' },
     { x: 13320, y: GROUND_Y - 80 - ENTITY_SIZE, type: 'shooter' },
+
+    // Chomper-ы
+    { x: 1600, y: GROUND_Y - ENTITY_SIZE, type: 'chomper' },
+    { x: 3800, y: GROUND_Y - ENTITY_SIZE, type: 'chomper' },
+    { x: 6100, y: GROUND_Y - ENTITY_SIZE, type: 'chomper' },
+    { x: 11600, y: GROUND_Y - ENTITY_SIZE, type: 'chomper' },
   ],
 
   powerups: [
@@ -186,6 +192,20 @@ const level2: LevelData = {
   ],
 
   rocketCorridor: { startX: 9000, endX: 10500 },
+
+  // Уровень 2: 3 падающих блока, 2 маятника
+  fallingBlocks: [
+    { x: 2600, y: GROUND_Y - 130, width: 60, height: 16 },
+    { x: 5350, y: GROUND_Y - 140, width: 70, height: 16 },
+    { x: 11800, y: GROUND_Y - 130, width: 65, height: 16 },
+  ],
+
+  pendulums: [
+    // Секция 3
+    { x: 4800, y: GROUND_Y - 230, length: 130, amplitude: 0.9, phase: 0, speed: 0.03, ballRadius: 14 },
+    // Секция 4
+    { x: 7900, y: GROUND_Y - 210, length: 120, amplitude: 1.0, phase: 1.5, speed: 0.035, ballRadius: 14 },
+  ],
 
   boss: {
     type: 'crusher',

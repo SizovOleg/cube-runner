@@ -8,7 +8,7 @@ const DEFAULT_OWNED: Record<UpgradeType, number> = {
 };
 
 const DEFAULT_PROGRESS: PlayerProgress = {
-  unlockedLevels: [1, 2, 3],
+  unlockedLevels: [1, 2, 3, 4, 5],
   bestScores: {},
   totalKills: 0,
   bossesDefeated: [],
@@ -28,6 +28,12 @@ export function loadProgress(): PlayerProgress {
     if (!parsed.unlockedLevels.includes(1)) {
       parsed.unlockedLevels.push(1);
     }
+    // Миграция: разблокировать уровни 4 и 5 для старых сохранений
+    for (const lvl of [4, 5]) {
+      if (!parsed.unlockedLevels.includes(lvl)) {
+        parsed.unlockedLevels.push(lvl);
+      }
+    }
     // Миграция: старые сохранения без скинов
     if (!parsed.unlockedSkins) parsed.unlockedSkins = ['green'];
     if (!parsed.currentSkin) parsed.currentSkin = 'green';
@@ -40,6 +46,16 @@ export function loadProgress(): PlayerProgress {
   } catch {
     return { ...DEFAULT_PROGRESS, unlockedLevels: [...DEFAULT_PROGRESS.unlockedLevels], unlockedSkins: [...DEFAULT_PROGRESS.unlockedSkins] };
   }
+}
+
+/**
+ * Сохраняет текущий баланс монет немедленно (вызывается при сборе каждой монеты).
+ * Это гарантирует что монеты не теряются при смерти игрока.
+ */
+export function saveCoinsImmediate(amount: number): void {
+  const progress = loadProgress();
+  progress.coins = (progress.coins || 0) + amount;
+  saveProgress(progress);
 }
 
 export function saveProgress(progress: PlayerProgress): void {
