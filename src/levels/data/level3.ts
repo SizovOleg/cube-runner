@@ -249,22 +249,25 @@ const level3: LevelData = {
   ],
 
   rocketCorridor: {
-    startX: 11000,
+    startX: 10000,
     endX: 14000,
     gapSizeFunc: 'variable',
     rotatingBlocks: [
       { offsetX: 500,  gapOffset: -0.25, size: 20 },
       { offsetX: 900,  gapOffset:  0.25, size: 20 },
       { offsetX: 1300, gapOffset:  0,    size: 20 },
-      { offsetX: 1700, gapOffset: -0.2,  size: 20 },
-      { offsetX: 2100, gapOffset:  0.2,  size: 20 },
-      { offsetX: 2500, gapOffset:  0,    size: 20 },
-      { offsetX: 2800, gapOffset: -0.3,  size: 20 },
+      { offsetX: 1800, gapOffset: -0.2,  size: 20 },
+      { offsetX: 2300, gapOffset:  0.2,  size: 20 },
+      { offsetX: 2800, gapOffset:  0,    size: 20 },
+      { offsetX: 3300, gapOffset: -0.3,  size: 20 },
+      { offsetX: 3700, gapOffset:  0.2,  size: 20 },
     ],
     coins: [
       { offsetX: 700,  gapOffset: 0 },
-      { offsetX: 1100, gapOffset: 0 },
-      { offsetX: 2300, gapOffset: 0 },
+      { offsetX: 1200, gapOffset: 0 },
+      { offsetX: 2000, gapOffset: -0.2 },
+      { offsetX: 2800, gapOffset: 0 },
+      { offsetX: 3500, gapOffset: 0.2 },
     ],
   },
 

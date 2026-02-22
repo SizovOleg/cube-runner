@@ -191,7 +191,24 @@ const level2: LevelData = {
     { x: 11360, y: GROUND_Y - 80 },
   ],
 
-  rocketCorridor: { startX: 9000, endX: 10500 },
+  rocketCorridor: {
+    startX: 8000,
+    endX: 11000,
+    gapSizeFunc: 'variable',
+    movingSpikes: [
+      { offsetX: 400,  amplitude: 50, phase: 0,   speed: 0.04 },
+      { offsetX: 900,  amplitude: 45, phase: 1.2, speed: 0.05 },
+      { offsetX: 1500, amplitude: 55, phase: 0.6, speed: 0.038 },
+      { offsetX: 2100, amplitude: 50, phase: 2.0, speed: 0.045 },
+      { offsetX: 2600, amplitude: 45, phase: 0.4, speed: 0.055 },
+    ],
+    coins: [
+      { offsetX: 650,  gapOffset: 0 },
+      { offsetX: 1200, gapOffset: -0.3 },
+      { offsetX: 1800, gapOffset: 0.3 },
+      { offsetX: 2350, gapOffset: 0 },
+    ],
+  },
 
   // Уровень 2: 3 падающих блока, 2 маятника
   fallingBlocks: [

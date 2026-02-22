@@ -126,20 +126,23 @@ const level1: LevelData = {
   ],
 
   rocketCorridor: {
-    startX: 7000,
+    startX: 6000,
     endX: 9500,
     gapSizeFunc: 'constant',
     movingSpikes: [
       { offsetX: 400,  amplitude: 55, phase: 0,    speed: 0.04 },
       { offsetX: 900,  amplitude: 40, phase: 1.5,  speed: 0.05 },
       { offsetX: 1400, amplitude: 65, phase: 0.8,  speed: 0.035 },
-      { offsetX: 1900, amplitude: 50, phase: 2.1,  speed: 0.045 },
-      { offsetX: 2300, amplitude: 45, phase: 0.3,  speed: 0.06 },
+      { offsetX: 2000, amplitude: 50, phase: 2.1,  speed: 0.045 },
+      { offsetX: 2600, amplitude: 45, phase: 0.3,  speed: 0.06 },
+      { offsetX: 3100, amplitude: 50, phase: 1.0,  speed: 0.05 },
     ],
     coins: [
       { offsetX: 650,  gapOffset: 0 },
-      { offsetX: 1150, gapOffset: -0.3 },
-      { offsetX: 1650, gapOffset: 0.3 },
+      { offsetX: 1200, gapOffset: -0.3 },
+      { offsetX: 1800, gapOffset: 0.3 },
+      { offsetX: 2400, gapOffset: 0 },
+      { offsetX: 3000, gapOffset: -0.2 },
     ],
   },
 

@@ -695,6 +695,17 @@ function drawObstacles(ctx: CanvasRenderingContext2D, obstacles: readonly Obstac
   }
 }
 
+/**
+ * Возвращает, должны ли шипы в данном сегменте быть сверху (true) или снизу (false).
+ * Сегмент = 300px. Используем детерминированный hash по мировой X.
+ */
+function corridorSpikesOnTop(wx: number): boolean {
+  const seg = Math.floor(wx / 300);
+  // Простой числовой hash
+  const h = (seg * 2654435761) >>> 0;
+  return (h & 1) === 0;
+}
+
 /** Вычисляет центр зазора и его размер для заданной мировой координаты */
 function getCorridorGap(wx: number, frame: number, corridor: RocketCorridorData): { center: number; size: number } {
   const center = 170 + Math.sin(wx * 0.004) * 80;
@@ -771,24 +782,27 @@ function drawCorridor(ctx: CanvasRenderingContext2D, corridor: RocketCorridorDat
     ctx.fillStyle = '#1a0a2e';
     ctx.fillRect(sx, floorY, 42, GROUND_Y - floorY);
 
-    // Шипы с потолка (вниз)
+    // Шипы только с одной стороны (детерминированно по сегменту 300px)
     ctx.fillStyle = COLORS.spike;
     ctx.shadowColor = COLORS.spike;
     ctx.shadowBlur = 6;
-    ctx.beginPath();
-    ctx.moveTo(sx, ceilingY - 5);
-    ctx.lineTo(sx + 20, ceilingY + 15);
-    ctx.lineTo(sx + 40, ceilingY - 5);
-    ctx.closePath();
-    ctx.fill();
-
-    // Шипы с пола (вверх)
-    ctx.beginPath();
-    ctx.moveTo(sx, floorY + 5);
-    ctx.lineTo(sx + 20, floorY - 15);
-    ctx.lineTo(sx + 40, floorY + 5);
-    ctx.closePath();
-    ctx.fill();
+    if (corridorSpikesOnTop(wx)) {
+      // Шипы с потолка (вниз)
+      ctx.beginPath();
+      ctx.moveTo(sx, ceilingY - 5);
+      ctx.lineTo(sx + 20, ceilingY + 15);
+      ctx.lineTo(sx + 40, ceilingY - 5);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      // Шипы с пола (вверх)
+      ctx.beginPath();
+      ctx.moveTo(sx, floorY + 5);
+      ctx.lineTo(sx + 20, floorY - 15);
+      ctx.lineTo(sx + 40, floorY + 5);
+      ctx.closePath();
+      ctx.fill();
+    }
     ctx.shadowBlur = 0;
   }
 
@@ -1432,7 +1446,7 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
             Math.abs(cy + player.height / 2 - coinCy) < player.height / 2 + COIN_RADIUS) {
           coin.collected = true;
           coinsCollected++;
-          saveCoinsImmediate(1);
+          saveCoinsImmediate(3);
           const sx = camera.worldToScreen(coin.x);
           particles.burst(sx, coin.y, COIN_COLOR, 8);
         }
@@ -1728,13 +1742,19 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
           setDeath({ score: Math.floor(camera.x / 10), kills });
         };
 
+        // Шипы только с одной стороны сегмента — урон только от той стены где шипы
+        const spikesOnTop = corridorSpikesOnTop(playerCX);
         if (player.y < ceilingBottom) {
-          if (player.takeDamage(1)) { dieInCorridor(); return; }
+          if (spikesOnTop) {
+            if (player.takeDamage(1)) { dieInCorridor(); return; }
+          }
           player.y = ceilingBottom;
           player.vy = 1;
         }
         if (player.y + player.height > floorTop) {
-          if (player.takeDamage(1)) { dieInCorridor(); return; }
+          if (!spikesOnTop) {
+            if (player.takeDamage(1)) { dieInCorridor(); return; }
+          }
           player.y = floorTop - player.height;
           player.vy = -1;
         }
@@ -1782,7 +1802,7 @@ function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanvasProps
             if (Math.abs(py - coinY) < 20) {
               corridor.coins.splice(ci, 1);
               coinsCollected++;
-              saveCoinsImmediate(1);
+              saveCoinsImmediate(3);
               particles.burst(camera.worldToScreen(coinWX), coinY, COIN_COLOR, 8);
             }
           }
