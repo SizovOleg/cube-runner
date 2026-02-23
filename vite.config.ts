@@ -12,6 +12,8 @@ export default defineConfig({
       '@levels': resolve(__dirname, 'src/levels'),
       '@ui': resolve(__dirname, 'src/ui'),
       '@utils': resolve(__dirname, 'src/utils'),
+      '@game-types': resolve(__dirname, 'src/types'),
+      '@game': resolve(__dirname, 'src/game'),
     },
   },
   build: {

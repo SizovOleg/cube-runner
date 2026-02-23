@@ -1,4 +1,5 @@
 import { ENTITY_SIZE, GROUND_Y, JUMP_FORCE, FLY_FORCE, COLORS, PowerupType, POWERUP_DURATION } from '@utils/constants';
+import { roundRect } from '@utils/canvasUtils';
 
 /**
  * Игрок — зелёный куб.
@@ -48,26 +49,6 @@ export class Player {
     this.maxHP = hp;
     this.skinColor = skinColor || COLORS.cube;
     this.skinGlow = Player.hexToGlow(this.skinColor);
-  }
-
-  /** Рисует скруглённый прямоугольник (fallback если roundRect недоступен) */
-  static roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
-    const rr = ctx as CanvasRenderingContext2D & { roundRect?: (...a: unknown[]) => void };
-    if (rr.roundRect) {
-      rr.roundRect(x, y, w, h, r);
-    } else {
-      ctx.beginPath();
-      ctx.moveTo(x + r, y);
-      ctx.lineTo(x + w - r, y);
-      ctx.arcTo(x + w, y, x + w, y + r, r);
-      ctx.lineTo(x + w, y + h - r);
-      ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
-      ctx.lineTo(x + r, y + h);
-      ctx.arcTo(x, y + h, x, y + h - r, r);
-      ctx.lineTo(x, y + r);
-      ctx.arcTo(x, y, x + r, y, r);
-      ctx.closePath();
-    }
   }
 
   /** Конвертирует hex-цвет в rgba для glow-эффекта */
@@ -193,12 +174,7 @@ export class Player {
         ctx.fillStyle = this.skinColor;
         const tx = trailPos.x + (this.width - size) / 2;
         const ty = trailPos.y + (this.height - size) / 2;
-        ctx.beginPath();
-        if ((ctx as CanvasRenderingContext2D & { roundRect?: (...a: unknown[]) => void }).roundRect) {
-          (ctx as CanvasRenderingContext2D & { roundRect: (...a: unknown[]) => void }).roundRect(tx, ty, size, size, 3);
-        } else {
-          ctx.rect(tx, ty, size, size);
-        }
+        roundRect(ctx, tx, ty, size, size, 3);
         ctx.fill();
       }
       ctx.globalAlpha = 1;
@@ -245,20 +221,20 @@ export class Player {
       ctx.shadowColor = this.skinColor;
       ctx.shadowBlur = 25;
       ctx.fillStyle = this.skinColor + '44';
-      Player.roundRect(ctx, -hw - 3, -hh - 3, this.width + 6, this.height + 6, 6);
+      roundRect(ctx, -hw - 3, -hh - 3, this.width + 6, this.height + 6, 6);
       ctx.fill();
 
       // Внутренний яркий glow (10px) + тело
       ctx.shadowBlur = 10;
       ctx.fillStyle = this.skinColor;
-      Player.roundRect(ctx, -hw, -hh, this.width, this.height, 4);
+      roundRect(ctx, -hw, -hh, this.width, this.height, 4);
       ctx.fill();
       ctx.shadowBlur = 0;
 
       // Блик (highlight) — верхний светлый край
       ctx.globalAlpha = 0.25;
       ctx.fillStyle = '#ffffff';
-      Player.roundRect(ctx, -hw + 2, -hh + 2, this.width - 4, 6, 3);
+      roundRect(ctx, -hw + 2, -hh + 2, this.width - 4, 6, 3);
       ctx.fill();
       ctx.globalAlpha = 1;
 

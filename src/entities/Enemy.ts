@@ -1,5 +1,6 @@
 import { ENTITY_SIZE, COLORS } from '@utils/constants';
 import { EnemyType } from '@levels/types';
+import { roundRect } from '@utils/canvasUtils';
 
 const CHOMPER_SIZE = 35;
 const CHOMPER_AGGRO_RANGE = 200;
@@ -136,18 +137,6 @@ export class Enemy {
     return true;
   }
 
-  private static roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
-    const rr = ctx as CanvasRenderingContext2D & { roundRect?: (...a: unknown[]) => void };
-    if (rr.roundRect) { rr.roundRect(x, y, w, h, r); return; }
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r);
-    ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
-    ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r);
-    ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r);
-    ctx.closePath();
-  }
-
   draw(ctx: CanvasRenderingContext2D, screenX: number, frame: number): void {
     if (!this.alive) return;
 
@@ -187,14 +176,14 @@ export class Enemy {
     ctx.fillStyle = bodyGrad;
     ctx.shadowColor = color;
     ctx.shadowBlur = glowPulse;
-    Enemy.roundRect(ctx, screenX, this.y, this.width, this.height, 4);
+    roundRect(ctx, screenX, this.y, this.width, this.height, 4);
     ctx.fill();
     ctx.shadowBlur = 0;
 
     // Highlight (светлый верх)
     ctx.globalAlpha = 0.2;
     ctx.fillStyle = '#fff';
-    Enemy.roundRect(ctx, screenX + 2, this.y + 2, this.width - 4, 6, 3);
+    roundRect(ctx, screenX + 2, this.y + 2, this.width - 4, 6, 3);
     ctx.fill();
     ctx.globalAlpha = 1;
 
@@ -203,7 +192,7 @@ export class Enemy {
       const shineY = (frame * 2) % (this.height + 20) - 10;
       if (shineY >= 0 && shineY < this.height - 2) {
         ctx.save();
-        Enemy.roundRect(ctx, screenX, this.y, this.width, this.height, 4);
+        roundRect(ctx, screenX, this.y, this.width, this.height, 4);
         ctx.clip();
         ctx.globalAlpha = 0.35;
         ctx.fillStyle = '#ffffff';
