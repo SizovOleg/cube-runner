@@ -12,6 +12,7 @@ export class Player {
   vy = 0;
   onGround = true;
   rotation = 0;
+  gravityDir = 1; // 1 = normal, -1 = inverted
 
   // Боевая система
   hp: number;
@@ -61,7 +62,7 @@ export class Player {
 
   jump(): void {
     if (this.onGround) {
-      this.vy = JUMP_FORCE;
+      this.vy = JUMP_FORCE * this.gravityDir;
       this.onGround = false;
       this.doubleJumpAvailable = this.hasDoubleJump;
     }
@@ -70,7 +71,7 @@ export class Player {
   /** Второй прыжок в воздухе. Возвращает true если выполнен. */
   doubleJump(): boolean {
     if (this.hasDoubleJump && this.doubleJumpAvailable && !this.onGround) {
-      this.vy = JUMP_FORCE;
+      this.vy = JUMP_FORCE * this.gravityDir;
       this.doubleJumpAvailable = false;
       return true;
     }
@@ -79,8 +80,9 @@ export class Player {
 
   fly(): void {
     if (!this.onGround) {
-      this.vy += FLY_FORCE;
-      if (this.vy < -5) this.vy = -5;
+      this.vy += FLY_FORCE * this.gravityDir;
+      if (this.gravityDir === 1 && this.vy < -5) this.vy = -5;
+      if (this.gravityDir === -1 && this.vy > 5) this.vy = 5;
     }
   }
 
@@ -209,50 +211,168 @@ export class Player {
       ctx.globalAlpha = 1;
       ctx.shadowBlur = 0;
     } else {
-      // === Squash-stretch при приземлении ===
+      // === Squash-stretch при приземлении + Переворот при антигравитации ===
       const squashProgress = this.squashTimer / 8;
       const scaleX = 1 + squashProgress * 0.25;
-      const scaleY = 1 - squashProgress * 0.2;
+      const scaleY = (1 - squashProgress * 0.2) * this.gravityDir;
       ctx.scale(scaleX, scaleY);
 
       ctx.rotate((this.rotation * Math.PI) / 180);
 
-      // Внешнее мягкое свечение (25px)
-      ctx.shadowColor = this.skinColor;
-      ctx.shadowBlur = 25;
-      ctx.fillStyle = this.skinColor + '44';
-      roundRect(ctx, -hw - 3, -hh - 3, this.width + 6, this.height + 6, 6);
-      ctx.fill();
+      const s = this.width; // cube size
 
-      // Внутренний яркий glow (10px) + тело
-      ctx.shadowBlur = 10;
-      ctx.fillStyle = this.skinColor;
-      roundRect(ctx, -hw, -hh, this.width, this.height, 4);
+      // ── Layer 1: Outer glow (large soft shadow) ──
+      ctx.shadowColor = this.skinColor;
+      ctx.shadowBlur = 30;
+      ctx.fillStyle = this.skinColor + '33';
+      roundRect(ctx, -hw - 5, -hh - 5, s + 10, s + 10, 7);
       ctx.fill();
       ctx.shadowBlur = 0;
 
-      // Блик (highlight) — верхний светлый край
-      ctx.globalAlpha = 0.25;
-      ctx.fillStyle = '#ffffff';
-      roundRect(ctx, -hw + 2, -hh + 2, this.width - 4, 6, 3);
+      // ── Layer 2: Dark border (creates depth) ──
+      ctx.fillStyle = '#000000';
+      ctx.globalAlpha = 0.5;
+      roundRect(ctx, -hw - 1, -hh - 1, s + 2, s + 2, 5);
       ctx.fill();
       ctx.globalAlpha = 1;
 
-      // Лицо — глаза с бликами
-      let eyeOffsetY = -5;
-      if (this.vy < -3) eyeOffsetY = -7;
-      else if (this.vy > 3) eyeOffsetY = -3;
+      // ── Layer 3: Main body with radial gradient (3D effect) ──
+      const bodyGrad = ctx.createRadialGradient(-hw + s * 0.35, -hh + s * 0.3, 0, 0, 0, s * 0.8);
+      bodyGrad.addColorStop(0, this.skinColor);
+      bodyGrad.addColorStop(0.6, this.skinColor);
+      bodyGrad.addColorStop(1, this.skinColor + '88');
+      ctx.fillStyle = bodyGrad;
+      roundRect(ctx, -hw, -hh, s, s, 4);
+      ctx.fill();
 
-      // Глаза (чуть крупнее)
-      ctx.fillStyle = '#000';
-      ctx.fillRect(-8, eyeOffsetY, 5, 5);
-      ctx.fillRect(3, eyeOffsetY, 5, 5);
-      // Рот
-      ctx.fillRect(-5, 3, 10, 2);
-      // Блики на глазах (2x2 белый пиксель)
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(-7, eyeOffsetY, 2, 2);
-      ctx.fillRect(4, eyeOffsetY, 2, 2);
+      // ── Layer 4: Inner darker edge ring (depth illusion like GD) ──
+      ctx.save();
+      roundRect(ctx, -hw, -hh, s, s, 4);
+      ctx.clip();
+      // Top-left inner shadow
+      const innerShadow = ctx.createLinearGradient(-hw, -hh, -hw, -hh + s);
+      innerShadow.addColorStop(0, 'rgba(255,255,255,0.15)');
+      innerShadow.addColorStop(0.15, 'rgba(255,255,255,0.03)');
+      innerShadow.addColorStop(0.85, 'rgba(0,0,0,0.05)');
+      innerShadow.addColorStop(1, 'rgba(0,0,0,0.25)');
+      ctx.fillStyle = innerShadow;
+      ctx.fillRect(-hw, -hh, s, s);
+      // Side shadow (left-right gradient)
+      const sideShadow = ctx.createLinearGradient(-hw, 0, -hw + s, 0);
+      sideShadow.addColorStop(0, 'rgba(255,255,255,0.08)');
+      sideShadow.addColorStop(0.15, 'rgba(0,0,0,0)');
+      sideShadow.addColorStop(0.85, 'rgba(0,0,0,0)');
+      sideShadow.addColorStop(1, 'rgba(0,0,0,0.15)');
+      ctx.fillStyle = sideShadow;
+      ctx.fillRect(-hw, -hh, s, s);
+
+      // ── Layer 5: Inner decorative chevron pattern (GD signature detail) ──
+      ctx.globalAlpha = 0.12;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      // Inner square frame
+      roundRect(ctx, -hw + 5, -hh + 5, s - 10, s - 10, 2);
+      ctx.stroke();
+      // Center cross / chevron
+      ctx.beginPath();
+      ctx.moveTo(-hw + s * 0.2, 0);
+      ctx.lineTo(0, -hh + s * 0.2);
+      ctx.lineTo(hw - s * 0.2, 0);
+      ctx.lineTo(0, hh - s * 0.2);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      ctx.restore();
+
+      // ── Layer 6: Specular shine (top-left hotspot) ──
+      ctx.globalAlpha = 0.35;
+      const specGrad = ctx.createRadialGradient(-hw + 8, -hh + 8, 0, -hw + 8, -hh + 8, s * 0.45);
+      specGrad.addColorStop(0, '#ffffff');
+      specGrad.addColorStop(0.4, 'rgba(255,255,255,0.15)');
+      specGrad.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = specGrad;
+      ctx.fillRect(-hw, -hh, s * 0.65, s * 0.65);
+      ctx.globalAlpha = 1;
+
+      // ── Layer 7: Top highlight bar ──
+      ctx.globalAlpha = 0.3;
+      ctx.fillStyle = '#ffffff';
+      roundRect(ctx, -hw + 3, -hh + 2, s - 6, 5, 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      // ── Layer 8: Neon border outline ──
+      ctx.strokeStyle = this.skinColor;
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.5;
+      ctx.shadowColor = this.skinColor;
+      ctx.shadowBlur = 8;
+      roundRect(ctx, -hw, -hh, s, s, 4);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+
+      // ═══ FACE: GD-style with round eyes & tracking pupils ═══
+      const eyeSize = 6;
+      const eyeSpacing = 12;
+      // Eye positions shift based on velocity
+      let eyeShiftY = 0;
+      let eyeShiftX = 0;
+      if (this.vy < -3) eyeShiftY = -2;
+      else if (this.vy > 3) eyeShiftY = 2;
+      // Pupils slightly move with rotation
+      eyeShiftX = Math.sin(this.rotation * Math.PI / 180) * 1.5;
+
+      // Left eye white
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(-eyeSpacing / 2, -2 + eyeShiftY, eyeSize / 2 + 1, 0, Math.PI * 2);
+      ctx.fill();
+      // Right eye white
+      ctx.beginPath();
+      ctx.arc(eyeSpacing / 2, -2 + eyeShiftY, eyeSize / 2 + 1, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Pupils (black)
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.arc(-eyeSpacing / 2 + eyeShiftX, -2 + eyeShiftY + 0.5, eyeSize / 2 - 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      // Right eye pupil
+      ctx.beginPath();
+      ctx.arc(eyeSpacing / 2 + eyeShiftX, -2 + eyeShiftY + 0.5, eyeSize / 2 - 0.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Pupil highlights (white dots)
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(-eyeSpacing / 2 - 1, -3 + eyeShiftY, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(eyeSpacing / 2 - 1, -3 + eyeShiftY, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Mouth: changes expression based on state
+      ctx.fillStyle = '#000000';
+      if (this.vy < -2) {
+        // Jumping — open mouth (excited)
+        ctx.beginPath();
+        ctx.arc(0, 5, 3, 0, Math.PI);
+        ctx.fill();
+      } else if (this.vy > 4) {
+        // Falling fast — scared 'O'
+        ctx.beginPath();
+        ctx.arc(0, 5, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        // Normal — slight smile
+        ctx.beginPath();
+        ctx.arc(0, 4, 4, 0.1, Math.PI - 0.1);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = '#000000';
+        ctx.stroke();
+      }
     }
 
     ctx.restore();
