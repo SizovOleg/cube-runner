@@ -45,7 +45,7 @@ export class BossGuardian extends Boss {
 
   updateBehavior(playerX: number, _playerY: number): void {
     // Гравитация
-    this.vy += 0.4;
+    this.vy += this.gravity;
     this.y += this.vy;
 
     if (this.y + this.height >= GROUND_Y) {

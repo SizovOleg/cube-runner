@@ -51,9 +51,9 @@ export class BossCrusher extends Boss {
 
     // Гравитация (ускоренная при падении для ощущения тяжести)
     if (this.vy > 0) {
-      this.vy += 0.7; // Быстрое падение
+      this.vy += this.gravity * 1.75; // Быстрое падение
     } else {
-      this.vy += 0.35;
+      this.vy += this.gravity * 0.875;
     }
     this.y += this.vy;
 

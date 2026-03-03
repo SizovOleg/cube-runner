@@ -89,6 +89,37 @@ export const SKIN_NAMES: Record<SkinId, string> = {
   void: 'Пустота',
 };
 
+// Геймплей: батуты и кольца (сила отскока)
+export const JUMP_PAD_FORCE_YELLOW = -14;
+export const JUMP_PAD_FORCE_PINK = -10;
+export const JUMP_PAD_FORCE_RED = -18;
+export const JUMP_RING_FORCE_YELLOW = -12;
+export const JUMP_RING_FORCE_PINK = -9;
+
+// Геймплей: порталы скорости (множитель)
+export const SPEED_MULT_SLOW = 0.7;
+export const SPEED_MULT_NORMAL = 1.0;
+export const SPEED_MULT_FAST = 1.3;
+export const SPEED_MULT_SUPERFAST = 1.6;
+
+// Геймплей: ракета / коридор
+export const CORRIDOR_GRAVITY = 0.2;
+export const CORRIDOR_SPEED_MULT = 1.5;
+export const CORRIDOR_LIFT_VY = -2;
+export const CORRIDOR_ROCKET_VY = -4;
+
+// Геймплей: арена босса
+export const ARENA_MOVE_SPEED = 4;
+export const BOSS_DEFAULT_GRAVITY = 0.4;
+
+// Геймплей: урон
+export const BOMB_BLAST_RADIUS = 120;
+export const BOMB_BOSS_DAMAGE = 3;
+export const STOMP_BOSS_DAMAGE = 2;
+export const INVINCIBLE_AFTER_HIT = 60;    // кадры
+export const INVINCIBLE_AFTER_BOSS_HIT = 30;
+export const FALLING_BLOCK_GRAVITY = 0.6;
+
 // Уровни
 export const LEVEL_BOSS_ARENA_WIDTH = 600;
 export const BOSS_INTRO_DURATION = 120; // frames

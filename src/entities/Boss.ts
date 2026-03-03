@@ -1,4 +1,4 @@
-import { COLORS, CANVAS_WIDTH } from '@utils/constants';
+import { COLORS, CANVAS_WIDTH, BOSS_DEFAULT_GRAVITY, INVINCIBLE_AFTER_BOSS_HIT } from '@utils/constants';
 
 /**
  * Базовый класс босса.
@@ -12,6 +12,7 @@ export interface BossConfig {
   y: number;
   width: number;
   height: number;
+  gravity?: number; // Гравитация босса, по умолчанию BOSS_DEFAULT_GRAVITY
 }
 
 export abstract class Boss {
@@ -29,6 +30,7 @@ export abstract class Boss {
   invincibleTimer: number;
   introPlaying: boolean;
   defeated: boolean;
+  gravity: number;
 
   constructor(config: BossConfig) {
     this.name = config.name;
@@ -45,6 +47,7 @@ export abstract class Boss {
     this.invincibleTimer = 0;
     this.introPlaying = true;
     this.defeated = false;
+    this.gravity = config.gravity ?? BOSS_DEFAULT_GRAVITY;
   }
 
   /**
@@ -55,7 +58,7 @@ export abstract class Boss {
 
     this.hp -= amount;
     this.invincible = true;
-    this.invincibleTimer = 30; // Неуязвимость после удара
+    this.invincibleTimer = INVINCIBLE_AFTER_BOSS_HIT;
 
     // Проверка смены фазы
     const phaseThreshold = this.maxHP / this.totalPhases;

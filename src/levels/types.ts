@@ -169,15 +169,5 @@ export interface PlayerProgress {
   activeUpgrades: UpgradeType[]; // активированы перед началом уровня
 }
 
-// Состояние игры
-export type GameScreen = 'menu' | 'levelSelect' | 'skins' | 'shop' | 'upgrades' | 'playing' | 'bossIntro' | 'bossFight' | 'levelComplete' | 'dead' | 'pause';
-
-export interface GameState {
-  screen: GameScreen;
-  currentLevel: number;
-  score: number;
-  kills: number;
-  camera: number;
-  playerHP: number;
-  maxHP: number;
-}
+// Экраны игры (используется в App.tsx)
+export type GameScreen = 'menu' | 'levelSelect' | 'skins' | 'shop' | 'upgrades' | 'playing';

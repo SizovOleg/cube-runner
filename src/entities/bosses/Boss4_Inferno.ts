@@ -63,6 +63,7 @@ export class BossInferno extends Boss {
       y: GROUND_Y - 75,
       width: 75,
       height: 75,
+      gravity: 0.45,
     };
     super(config);
     this.arenaLeft = arenaX;
@@ -71,7 +72,7 @@ export class BossInferno extends Boss {
 
   updateBehavior(playerX: number, playerY: number): void {
     // Гравитация
-    this.vy += 0.45;
+    this.vy += this.gravity;
     this.y += this.vy;
     if (this.y + this.height >= GROUND_Y) {
       this.y = GROUND_Y - this.height;

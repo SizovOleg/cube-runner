@@ -7,6 +7,12 @@ import {
   LEVEL_BOSS_ARENA_WIDTH, BOSS_INTRO_DURATION,
   COIN_RADIUS, COIN_COLOR, COIN_GLOW,
   SKIN_COLORS,
+  JUMP_PAD_FORCE_YELLOW, JUMP_PAD_FORCE_PINK, JUMP_PAD_FORCE_RED,
+  JUMP_RING_FORCE_YELLOW, JUMP_RING_FORCE_PINK,
+  SPEED_MULT_SLOW, SPEED_MULT_NORMAL, SPEED_MULT_FAST, SPEED_MULT_SUPERFAST,
+  CORRIDOR_GRAVITY, CORRIDOR_SPEED_MULT, CORRIDOR_LIFT_VY, CORRIDOR_ROCKET_VY,
+  ARENA_MOVE_SPEED, BOMB_BLAST_RADIUS, BOMB_BOSS_DAMAGE, STOMP_BOSS_DAMAGE,
+  FALLING_BLOCK_GRAVITY,
 } from '@utils/constants';
 import { primaryBtnStyle, neonBtnStyle, ghostBtnStyle, screenContainerStyle, FONT_TITLE, FONT_BODY, NEON_CYAN, NEON_GOLD } from '@ui/styles';
 import { Player } from '@entities/Player';
@@ -156,7 +162,7 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
         particles.update();
         camera.update(player.x);
         // Render и return
-        renderFrame(ctx, frame, camera, stars, obstacles, movingPlatforms, fallingBlocks, pendulums, enemies, powerups, bullets, enemyBullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp, bgGradCache, groundGradCache, groundLineColor, levelCoins, coinsCollected, sparks, binaryDrops);
+        renderFrame({ ctx, frame, camera, stars, obstacles, movingPlatforms, fallingBlocks, pendulums, enemies, powerups, bullets, enemyBullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp, bgGrad: bgGradCache, groundGrad: groundGradCache, groundLineColor, liveCoins: levelCoins, sparks, binaryDrops });
         rafRef.current = requestAnimationFrame(loop);
         if (bossDefeatTimer >= 60) {
           const finalScore = Math.floor(camera.x / 10);
@@ -175,7 +181,7 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
           bossPhase = 'fight';
           if (boss) boss.introPlaying = false;
         }
-        renderFrame(ctx, frame, camera, stars, obstacles, movingPlatforms, fallingBlocks, pendulums, enemies, powerups, bullets, enemyBullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp, bgGradCache, groundGradCache, groundLineColor, levelCoins, coinsCollected, sparks, binaryDrops);
+        renderFrame({ ctx, frame, camera, stars, obstacles, movingPlatforms, fallingBlocks, pendulums, enemies, powerups, bullets, enemyBullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp, bgGrad: bgGradCache, groundGrad: groundGradCache, groundLineColor, liveCoins: levelCoins, sparks, binaryDrops });
         rafRef.current = requestAnimationFrame(loop);
         return;
       }
@@ -185,6 +191,7 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
         bossPhase = 'intro';
         bossIntroTimer = 0;
         audio.bossIntro();
+        speedMultiplier = SPEED_MULT_NORMAL; // Сброс скорости при входе в арену
         camera.lock(arenaX - CANVAS_WIDTH * 0.1);
         // Создание босса в зависимости от уровня
         if (levelId === 5) {
@@ -209,7 +216,7 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
         player.corridorMode = corridorMode;
         if (!wasInCorridor && corridorMode) {
           // Вход в коридор — подъём
-          player.vy = -2;
+          player.vy = CORRIDOR_LIFT_VY;
           player.onGround = false;
           audio.corridorEnter();
         }
@@ -224,11 +231,12 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
 
       // === Режим ракеты / коридора ===
       if (player.isRocketMode() || corridorMode) {
-        player.x += speed * 1.5;
+        if (frame % 3 === 0) audio.rocketLoop();
+        player.x += speed * CORRIDOR_SPEED_MULT;
         if (inp.jump) {
-          player.vy = -4;
+          player.vy = CORRIDOR_ROCKET_VY;
         } else {
-          player.vy += 0.2;
+          player.vy += CORRIDOR_GRAVITY;
         }
         player.y += player.vy;
         if (player.y < 5) player.y = 5;
@@ -252,9 +260,8 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
           player.x += speed;
         } else {
           // В арене: ручное управление влево/вправо
-          const ARENA_SPEED = 4;
-          if (inp.moveLeft) player.x -= ARENA_SPEED;
-          if (inp.moveRight) player.x += ARENA_SPEED;
+          if (inp.moveLeft) player.x -= ARENA_MOVE_SPEED;
+          if (inp.moveRight) player.x += ARENA_MOVE_SPEED;
         }
 
         if (inp.jump && player.onGround) {
@@ -358,7 +365,7 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
           for (const enemy of enemies) {
             if (!enemy.alive) continue;
             const dist = Math.abs((enemy.x + ENTITY_SIZE / 2) - (bomb.x + bomb.width / 2));
-            if (dist < 120) {
+            if (dist < BOMB_BLAST_RADIUS) {
               enemy.takeDamage(10);
               kills++;
               const ex = camera.worldToScreen(enemy.x);
@@ -368,8 +375,8 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
           // Бомба урон боссу
           if (boss && boss.alive) {
             const dist = Math.abs((boss.x + boss.width / 2) - (bomb.x + bomb.width / 2));
-            if (dist < 120) {
-              boss.takeDamage(3);
+            if (dist < BOMB_BLAST_RADIUS) {
+              boss.takeDamage(BOMB_BOSS_DAMAGE);
               particles.burst(camera.worldToScreen(boss.x + boss.width / 2), boss.y + boss.height / 2, '#ff4400', 15);
             }
           }
@@ -481,7 +488,7 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
             fb.vy = 0;
           }
         } else if (fb.state === 'falling') {
-          fb.vy += 0.6; // гравитация
+          fb.vy += FALLING_BLOCK_GRAVITY;
           fb.y += fb.vy;
           if (fb.y + fb.height >= GROUND_Y) {
             fb.y = GROUND_Y - fb.height;
@@ -618,7 +625,7 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
       if (boss && boss.alive && bossPhase === 'fight') {
         if (aabbCollision(player, boss)) {
           if (stompCheck(player, boss)) {
-            const killed = boss.takeDamage(2);
+            const killed = boss.takeDamage(STOMP_BOSS_DAMAGE);
             player.vy = JUMP_FORCE * 0.7;
             player.onGround = false;
             particles.burst(camera.worldToScreen(boss.x + boss.width / 2), boss.y, '#ff4400', 10);
@@ -736,9 +743,9 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
           }
           else if (obs.type.startsWith('jump_pad')) {
             if (aabbCollision(player, hitbox)) {
-              if (obs.type === 'jump_pad_yellow') player.vy = -14;
-              else if (obs.type === 'jump_pad_pink') player.vy = -10;
-              else if (obs.type === 'jump_pad_red') player.vy = -18;
+              if (obs.type === 'jump_pad_yellow') player.vy = JUMP_PAD_FORCE_YELLOW;
+              else if (obs.type === 'jump_pad_pink') player.vy = JUMP_PAD_FORCE_PINK;
+              else if (obs.type === 'jump_pad_red') player.vy = JUMP_PAD_FORCE_RED;
               player.onGround = false;
               audio.jump();
               particles.burst(camera.worldToScreen(obs.x + obs.width / 2), obs.y, '#ffff00', 8);
@@ -746,8 +753,8 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
           }
           else if (obs.type.startsWith('jump_ring')) {
             if (aabbCollision(player, hitbox) && inp.jump && !usedObjects.has(obs)) {
-              if (obs.type === 'jump_ring_yellow') player.vy = -12;
-              else if (obs.type === 'jump_ring_pink') player.vy = -9;
+              if (obs.type === 'jump_ring_yellow') player.vy = JUMP_RING_FORCE_YELLOW;
+              else if (obs.type === 'jump_ring_pink') player.vy = JUMP_RING_FORCE_PINK;
               player.onGround = false;
               usedObjects.add(obs);
               input.setJump(false); // Забираем инпут, чтобы не было двойного прыжка
@@ -757,10 +764,10 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
           }
           else if (obs.type.startsWith('speed_portal')) {
             if (aabbCollision(player, hitbox) && !usedObjects.has(obs)) {
-              if (obs.type === 'speed_portal_slow') speedMultiplier = 0.7;
-              else if (obs.type === 'speed_portal_normal') speedMultiplier = 1.0;
-              else if (obs.type === 'speed_portal_fast') speedMultiplier = 1.3;
-              else if (obs.type === 'speed_portal_superfast') speedMultiplier = 1.6;
+              if (obs.type === 'speed_portal_slow') speedMultiplier = SPEED_MULT_SLOW;
+              else if (obs.type === 'speed_portal_normal') speedMultiplier = SPEED_MULT_NORMAL;
+              else if (obs.type === 'speed_portal_fast') speedMultiplier = SPEED_MULT_FAST;
+              else if (obs.type === 'speed_portal_superfast') speedMultiplier = SPEED_MULT_SUPERFAST;
               usedObjects.add(obs);
               particles.burst(camera.worldToScreen(obs.x + obs.width / 2), obs.y + obs.height / 2, '#00ffff', 15);
             }
@@ -885,26 +892,55 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
       }
 
       // --- RENDER ---
-      renderFrame(ctx, frame, camera, stars, obstacles, movingPlatforms, fallingBlocks, pendulums, enemies, powerups, bullets, enemyBullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp, bgGradCache, groundGradCache, groundLineColor, levelCoins, coinsCollected, sparks, binaryDrops, speed, levelLength);
+      renderFrame({ ctx, frame, camera, stars, obstacles, movingPlatforms, fallingBlocks, pendulums, enemies, powerups, bullets, enemyBullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp, bgGrad: bgGradCache, groundGrad: groundGradCache, groundLineColor, liveCoins: levelCoins, sparks, binaryDrops, currentSpeed: speed, levelLength });
 
       rafRef.current = requestAnimationFrame(loop);
     };
 
-    // Вынесенная функция рендера
-    function renderFrame(
-      ctx: CanvasRenderingContext2D, frame: number, camera: Camera, stars: Star[],
-      obstacles: readonly ObstacleData[], movingPlatforms: MovingObstacle[],
-      fallingBlocksArg: FallingBlock[], pendulumsArg: Pendulum[],
-      enemies: Enemy[], powerups: Powerup[],
-      bullets: Bullet[], enemyBullets: EnemyBullet[], bombs: BombProjectile[], player: Player,
-      particles: ParticleSystem, kills: number, muzzleFlash: number,
-      boss: Boss | null, bossPhase: BossPhase, bossIntroTimer: number,
-      arenaX: number, inp: { jump: boolean },
-      bgGrad: CanvasGradient, groundGrad: CanvasGradient, groundLineColor: string,
-      liveCoins: LiveCoin[], _sessionCoins: number,
-      sparksArg: Spark[], binaryDropsArg: BinaryDrop[],
-      currentSpeed?: number, currentLevelLength?: number,
-    ) {
+    // Интерфейс данных для рендера кадра
+    interface RenderData {
+      ctx: CanvasRenderingContext2D;
+      frame: number;
+      camera: Camera;
+      stars: Star[];
+      obstacles: readonly ObstacleData[];
+      movingPlatforms: MovingObstacle[];
+      fallingBlocks: FallingBlock[];
+      pendulums: Pendulum[];
+      enemies: Enemy[];
+      powerups: Powerup[];
+      bullets: Bullet[];
+      enemyBullets: EnemyBullet[];
+      bombs: BombProjectile[];
+      player: Player;
+      particles: ParticleSystem;
+      kills: number;
+      muzzleFlash: number;
+      boss: Boss | null;
+      bossPhase: BossPhase;
+      bossIntroTimer: number;
+      arenaX: number;
+      inp: { jump: boolean };
+      bgGrad: CanvasGradient;
+      groundGrad: CanvasGradient;
+      groundLineColor: string;
+      liveCoins: LiveCoin[];
+      sparks: Spark[];
+      binaryDrops: BinaryDrop[];
+      currentSpeed?: number;
+      levelLength?: number;
+    }
+
+    function renderFrame(rd: RenderData) {
+      const {
+        ctx, frame, camera, stars, obstacles, movingPlatforms,
+        fallingBlocks, pendulums, enemies, powerups,
+        bullets, enemyBullets, bombs, player, particles,
+        kills, muzzleFlash, boss, bossPhase, bossIntroTimer,
+        arenaX, inp, bgGrad, groundGrad, groundLineColor,
+        liveCoins, sparks, binaryDrops, currentSpeed, levelLength: currentLevelLength,
+      } = rd;
+
       // Тряска экрана от боссов (Crusher / FrostKing)
       const shakeVal = boss && 'screenShake' in boss ? (boss as { screenShake: number }).screenShake : 0;
       const shakeX = shakeVal * (Math.random() - 0.5);
@@ -932,7 +968,7 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
       ctx.globalAlpha = 1;
 
       // === Атмосферные эффекты уровня (холмы + ромбы + rain/snow/sparks/binary + пульсация) ===
-      drawAtmosphere(ctx, frame, camera, levelId, rainDrops, snowflakes, sparksArg, binaryDropsArg);
+      drawAtmosphere(ctx, frame, camera, levelId, rainDrops, snowflakes, sparks, binaryDrops);
 
       // === Земля: градиентная заливка (кешированный градиент) ===
       ctx.fillStyle = groundGrad;
@@ -965,10 +1001,10 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
       drawObstacles(ctx, obstacles, movingPlatforms, camera);
 
       // Падающие блоки
-      drawFallingBlocks(ctx, fallingBlocksArg, camera, frame);
+      drawFallingBlocks(ctx, fallingBlocks, camera, frame);
 
       // Маятники (рисуем до игрока, чтобы шар был позади)
-      drawPendulums(ctx, pendulumsArg, camera);
+      drawPendulums(ctx, pendulums, camera);
 
       // Монеты уровня
       for (const coin of liveCoins) {

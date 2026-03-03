@@ -1,4 +1,4 @@
-import { ENTITY_SIZE, GROUND_Y, JUMP_FORCE, FLY_FORCE, COLORS, PowerupType, POWERUP_DURATION } from '@utils/constants';
+import { ENTITY_SIZE, GROUND_Y, JUMP_FORCE, FLY_FORCE, COLORS, PowerupType, POWERUP_DURATION, INVINCIBLE_AFTER_HIT } from '@utils/constants';
 import { roundRect } from '@utils/canvasUtils';
 
 /**
@@ -90,12 +90,14 @@ export class Player {
   isSuperBullet(): boolean { return this.superBulletTimer > 0; }
 
   takeDamage(amount = 1): boolean {
-    if (this.invincibleTimer > 0 || this.shieldTimer > 0) {
-      if (this.shieldTimer > 0) this.shieldTimer = Math.max(0, this.shieldTimer - 30);
+    if (this.invincibleTimer > 0) return false;
+    if (this.shieldTimer > 0) {
+      this.shieldTimer = Math.max(0, this.shieldTimer - 30);
+      this.invincibleTimer = 30; // Неуязвимость после удара щитом
       return false;
     }
     this.hp -= amount;
-    this.invincibleTimer = 60; // Неуязвимость после удара
+    this.invincibleTimer = INVINCIBLE_AFTER_HIT;
     if (this.hp <= 0) {
       this.alive = false;
       return true; // Мёртв
