@@ -16,11 +16,11 @@ import { ScaledContainer } from './ScaledContainer';
 
 // --- Конфиг уровней для экрана выбора ---
 const LEVEL_INFO: Array<{ id: number; name: string; bossName: string }> = [
-  { id: 1, name: 'Neon City',      bossName: 'Guardian'  },
-  { id: 2, name: 'Cyber Sewer',    bossName: 'Crusher'   },
-  { id: 3, name: 'Ice Citadel',    bossName: 'Frost King'},
-  { id: 4, name: 'Volcanic Forge', bossName: 'Inferno'   },
-  { id: 5, name: 'Digital Core',   bossName: 'Core'      },
+  { id: 1, name: 'Neon City', bossName: 'Guardian' },
+  { id: 2, name: 'Cyber Sewer', bossName: 'Crusher' },
+  { id: 3, name: 'Ice Citadel', bossName: 'Frost King' },
+  { id: 4, name: 'Volcanic Forge', bossName: 'Inferno' },
+  { id: 5, name: 'Digital Core', bossName: 'Core' },
 ];
 
 // Карта уровней по ID
