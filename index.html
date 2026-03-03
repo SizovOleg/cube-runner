@@ -1,31 +1,202 @@
 <!DOCTYPE html>
 <html lang="ru">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="theme-color" content="#0a0a2e" />
-    <title>Cube Runner: Battle Dash</title>
-    <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; touch-action: none; }
-      html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a2e; font-family: monospace; }
-      #root {
-        width: 100%;
-        height: 100%;
-        /* Safe-area: сдвигаем содержимое ниже status bar / notch */
-        padding-top: env(safe-area-inset-top);
-        padding-bottom: env(safe-area-inset-bottom);
-        padding-left: env(safe-area-inset-left);
-        padding-right: env(safe-area-inset-right);
-        box-sizing: border-box;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#050520" />
+  <meta name="description" content="Cube Runner: Battle Dash — динамичный 2D раннер с боссами в стиле Geometry Dash" />
+  <title>Cube Runner: Battle Dash</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@400;600;700&display=swap"
+    rel="stylesheet" />
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      touch-action: none;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #050520;
+      font-family: 'Rajdhani', 'Orbitron', monospace;
+      cursor: crosshair;
+    }
+
+    /* Animated gradient background while loading */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(ellipse at 30% 50%, rgba(0, 255, 136, 0.06) 0%, transparent 60%),
+        radial-gradient(ellipse at 70% 30%, rgba(0, 100, 255, 0.05) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 80%, rgba(255, 0, 102, 0.04) 0%, transparent 50%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    #root {
+      width: 100%;
+      height: 100%;
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+      padding-left: env(safe-area-inset-left);
+      padding-right: env(safe-area-inset-right);
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Smooth button transitions */
+    button {
+      transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s ease !important;
+    }
+
+    button:hover {
+      transform: scale(1.05) !important;
+      filter: brightness(1.15) !important;
+    }
+
+    button:active {
+      transform: scale(0.97) !important;
+      filter: brightness(0.95) !important;
+    }
+
+    /* Scrollbar styling */
+    ::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(0, 255, 204, 0.3);
+      border-radius: 4px;
+    }
+
+    /* Neon text glow animation for titles */
+    @keyframes neonPulse {
+
+      0%,
+      100% {
+        text-shadow: 0 0 20px rgba(0, 255, 204, 0.6), 0 0 40px rgba(0, 255, 204, 0.2);
       }
-    </style>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+
+      50% {
+        text-shadow: 0 0 30px rgba(0, 255, 204, 0.9), 0 0 60px rgba(0, 255, 204, 0.4), 0 0 80px rgba(0, 255, 204, 0.15);
+      }
+    }
+
+    @keyframes floatUp {
+      0% {
+        transform: translateY(0);
+        opacity: 1;
+      }
+
+      100% {
+        transform: translateY(-30px);
+        opacity: 0;
+      }
+    }
+
+    @keyframes shake {
+
+      0%,
+      100% {
+        transform: translateX(0);
+      }
+
+      20% {
+        transform: translateX(-4px);
+      }
+
+      40% {
+        transform: translateX(4px);
+      }
+
+      60% {
+        transform: translateX(-3px);
+      }
+
+      80% {
+        transform: translateX(3px);
+      }
+    }
+
+    @keyframes starSpin {
+      0% {
+        transform: scale(0) rotate(-180deg);
+        opacity: 0;
+      }
+
+      60% {
+        transform: scale(1.3) rotate(15deg);
+        opacity: 1;
+      }
+
+      100% {
+        transform: scale(1) rotate(0deg);
+        opacity: 1;
+      }
+    }
+
+    @keyframes slideUp {
+      0% {
+        transform: translateY(20px);
+        opacity: 0;
+      }
+
+      100% {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    @keyframes countUp {
+      0% {
+        transform: scale(1.3);
+        color: #00ffcc;
+      }
+
+      100% {
+        transform: scale(1);
+        color: #fff;
+      }
+    }
+
+    @keyframes glowPulse {
+
+      0%,
+      100% {
+        box-shadow: 0 0 15px rgba(0, 255, 204, 0.3);
+      }
+
+      50% {
+        box-shadow: 0 0 25px rgba(0, 255, 204, 0.6), 0 0 40px rgba(0, 255, 204, 0.2);
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
 </html>

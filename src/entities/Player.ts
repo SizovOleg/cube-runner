@@ -339,7 +339,6 @@ export class Player {
       ctx.beginPath();
       ctx.arc(-eyeSpacing / 2 + eyeShiftX, -2 + eyeShiftY + 0.5, eyeSize / 2 - 0.5, 0, Math.PI * 2);
       ctx.fill();
-      // Right eye pupil
       ctx.beginPath();
       ctx.arc(eyeSpacing / 2 + eyeShiftX, -2 + eyeShiftY + 0.5, eyeSize / 2 - 0.5, 0, Math.PI * 2);
       ctx.fill();

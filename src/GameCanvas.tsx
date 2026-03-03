@@ -8,7 +8,7 @@ import {
   COIN_RADIUS, COIN_COLOR, COIN_GLOW,
   SKIN_COLORS,
 } from '@utils/constants';
-import { primaryBtnStyle, neonBtnStyle } from '@ui/styles';
+import { primaryBtnStyle, neonBtnStyle, ghostBtnStyle, screenContainerStyle, FONT_TITLE, FONT_BODY, NEON_CYAN, NEON_GOLD } from '@ui/styles';
 import { Player } from '@entities/Player';
 import { Enemy } from '@entities/Enemy';
 import { Powerup } from '@entities/Powerup';
@@ -22,18 +22,13 @@ import { Camera } from '@engine/Camera';
 import { Input } from '@engine/Input';
 import { ParticleSystem } from '@engine/ParticleSystem';
 import { applyGravity, clampToGround, landingCollision, aabbCollision, stompCheck } from '@engine/Physics';
-import { drawObstacles, drawBullets, drawBombs, drawFallingBlocks, drawPendulums, drawArenaWalls } from '@engine/Renderer';
+import { drawObstacles, drawBullets, drawBombs, drawFallingBlocks, drawPendulums, drawArenaWalls, setRendererFrame } from '@engine/Renderer';
 import { drawHUD, drawBossIntro, drawBossDefeated } from '@engine/HUDRenderer';
 import { audio } from '@engine/AudioManager';
-import level1 from '@levels/data/level1';
-import level2 from '@levels/data/level2';
-import level3 from '@levels/data/level3';
-import level4 from '@levels/data/level4';
-import level5 from '@levels/data/level5';
-import { LevelData, ObstacleData } from '@levels/types';
+import { ObstacleData } from '@levels/types';
 import { saveLevelComplete, unlockSkin, getCurrentSkinColor, saveCoinsImmediate, consumeActiveUpgrades } from '@utils/storage';
 import { corridorSpikesOnTop, getCorridorGap, drawCorridor } from '@engine/CorridorRenderer';
-import { Spark, BinaryDrop, createRainDrops, createSnowflakes, createSparks, createBinaryDrops, drawAtmosphere, drawGroundTexture } from '@engine/BackgroundRenderer';
+import { Spark, BinaryDrop, createRainDrops, createSnowflakes, createSparks, createBinaryDrops, drawAtmosphere, drawGroundTexture, drawSpeedLines } from '@engine/BackgroundRenderer';
 import { requestFullscreen } from './ScaledContainer';
 import {
   Star, Bullet, EnemyBullet, BombProjectile,
@@ -44,16 +39,8 @@ import {
   createStars, createEnemies, createPowerups, createCages,
   createMovingPlatforms, createFallingBlocks, createPendulums, createLiveCoins,
 } from '@game/LevelFactory';
-
-const LEVELS: Record<number, LevelData> = { 1: level1, 2: level2, 3: level3, 4: level4, 5: level5 };
-const TOTAL_LEVELS = 5;
-const LEVEL_INFO = [
-  { id: 1, name: 'Neon City' },
-  { id: 2, name: 'Cyber Sewer' },
-  { id: 3, name: 'Ice Citadel' },
-  { id: 4, name: 'Volcanic Forge' },
-  { id: 5, name: 'Digital Core' },
-];
+import { LEVELS, LEVEL_INFO, TOTAL_LEVELS } from '@utils/shared';
+import level1 from '@levels/data/level1';
 
 // --- GameCanvas ---
 
@@ -87,6 +74,7 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
     inputRef.current = input;
 
     const levelData = LEVELS[levelId] ?? level1;
+    const levelLength = levelData.length;
     const skinColor = getCurrentSkinColor();
     // Применяем активные апгрейды
     const activeUpgrades = consumeActiveUpgrades();
@@ -148,15 +136,19 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
     const corridor = levelData.rocketCorridor;
     let corridorMode = false;
 
+    const usedObjects = new Set<ObstacleData>();
+    let speedMultiplier = 1;
+
     const loop = () => {
       if (!running) return;
       frameRef.current++;
       const frame = frameRef.current;
+      setRendererFrame(frame);
       const inp = input.getState();
 
       // --- UPDATE ---
 
-      const speed = BASE_SPEED + Math.min(camera.x / 6000, MAX_SPEED_BONUS);
+      const speed = (BASE_SPEED + Math.min(camera.x / 6000, MAX_SPEED_BONUS)) * speedMultiplier;
 
       // === BOSS PHASE: defeated (пауза 1 сек перед Level Complete) ===
       if (bossPhase === 'defeated') {
@@ -278,13 +270,21 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
         applyGravity(player);
         const wasInAir = !player.onGround;
 
-        // Платформы (статические)
+        // Платформы (статические и ломающиеся)
         for (const obs of obstacles) {
-          if (obs.type !== 'platform') continue;
+          if (obs.type !== 'platform' && obs.type !== 'breakable_block') continue;
+          if (obs.type === 'breakable_block' && usedObjects.has(obs)) continue;
+
           if (landingCollision(player, obs)) {
             player.y = obs.y - player.height;
             player.vy = 0;
             player.onGround = true;
+
+            if (obs.type === 'breakable_block') {
+              usedObjects.add(obs);
+              const sx = camera.worldToScreen(obs.x);
+              particles.burst(sx + obs.width / 2, obs.y + obs.height / 2, '#444444', 15);
+            }
           }
         }
 
@@ -307,9 +307,10 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
         if (clampToGround(player)) {
           player.onGround = true;
         }
-        // Squash-stretch при приземлении
+        // Squash-stretch при приземлении + jump dust
         if (wasInAir && player.onGround) {
           player.triggerLanding();
+          particles.jumpDust(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + player.height, skinColor + '88');
         }
         if (player.y < 5) player.y = 5;
 
@@ -438,7 +439,7 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
         const cx = player.x, cy = player.y;
         const coinCx = coin.x, coinCy = coin.y;
         if (Math.abs(cx + player.width / 2 - coinCx) < player.width / 2 + COIN_RADIUS &&
-            Math.abs(cy + player.height / 2 - coinCy) < player.height / 2 + COIN_RADIUS) {
+          Math.abs(cy + player.height / 2 - coinCy) < player.height / 2 + COIN_RADIUS) {
           coin.collected = true;
           coinsCollected++;
           saveCoinsImmediate(3);
@@ -468,8 +469,8 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
           // Игрок под блоком?
           const playerCenterX = player.x + player.width / 2;
           if (playerCenterX >= fb.x && playerCenterX <= fb.x + fb.width &&
-              player.y + player.height <= fb.y + fb.height &&
-              player.y + player.height >= fb.y - 150) {
+            player.y + player.height <= fb.y + fb.height &&
+            player.y + player.height >= fb.y - 150) {
             fb.state = 'warning';
             fb.warningTimer = 30; // 0.5 сек при 60fps
           }
@@ -717,17 +718,75 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
         }
       }
 
-      // Шипы (пропускаются в режиме ракеты и коридора)
+      // Интерактивные объекты и Шипы (пропускаются в режиме ракеты и коридора)
       if (!player.isRocketMode() && !corridorMode) {
         for (const obs of obstacles) {
-          if (obs.type !== 'spike') continue;
-          const spikeHitbox = { x: obs.x + 5, y: obs.y + 5, width: obs.width - 10, height: obs.height - 5 };
-          if (aabbCollision(player, spikeHitbox)) {
-            const died = player.takeDamage(1);
-            if (died) {
-              particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, COLORS.spike, 15);
-              setDeath({ score: Math.floor(camera.x / 10), kills });
-              return;
+          const hitbox = { x: obs.x, y: obs.y, width: obs.width, height: obs.height };
+
+          if (obs.type === 'spike') {
+            const spikeHitbox = { x: obs.x + 5, y: obs.y + 5, width: obs.width - 10, height: obs.height - 5 };
+            if (aabbCollision(player, spikeHitbox)) {
+              const died = player.takeDamage(1);
+              if (died) {
+                particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, COLORS.spike, 15);
+                setDeath({ score: Math.floor(camera.x / 10), kills });
+                return;
+              }
+            }
+          }
+          else if (obs.type.startsWith('jump_pad')) {
+            if (aabbCollision(player, hitbox)) {
+              if (obs.type === 'jump_pad_yellow') player.vy = -14;
+              else if (obs.type === 'jump_pad_pink') player.vy = -10;
+              else if (obs.type === 'jump_pad_red') player.vy = -18;
+              player.onGround = false;
+              audio.jump();
+              particles.burst(camera.worldToScreen(obs.x + obs.width / 2), obs.y, '#ffff00', 8);
+            }
+          }
+          else if (obs.type.startsWith('jump_ring')) {
+            if (aabbCollision(player, hitbox) && inp.jump && !usedObjects.has(obs)) {
+              if (obs.type === 'jump_ring_yellow') player.vy = -12;
+              else if (obs.type === 'jump_ring_pink') player.vy = -9;
+              player.onGround = false;
+              usedObjects.add(obs);
+              input.setJump(false); // Забираем инпут, чтобы не было двойного прыжка
+              audio.jump();
+              particles.burst(camera.worldToScreen(obs.x + obs.width / 2), obs.y + obs.height / 2, '#ffffff', 12);
+            }
+          }
+          else if (obs.type.startsWith('speed_portal')) {
+            if (aabbCollision(player, hitbox) && !usedObjects.has(obs)) {
+              if (obs.type === 'speed_portal_slow') speedMultiplier = 0.7;
+              else if (obs.type === 'speed_portal_normal') speedMultiplier = 1.0;
+              else if (obs.type === 'speed_portal_fast') speedMultiplier = 1.3;
+              else if (obs.type === 'speed_portal_superfast') speedMultiplier = 1.6;
+              usedObjects.add(obs);
+              particles.burst(camera.worldToScreen(obs.x + obs.width / 2), obs.y + obs.height / 2, '#00ffff', 15);
+            }
+          }
+          else if (obs.type.startsWith('gravity_portal')) {
+            if (aabbCollision(player, hitbox) && !usedObjects.has(obs)) {
+              const newDir = obs.type === 'gravity_portal_up' ? -1 : 1;
+              if (player.gravityDir !== newDir) {
+                player.gravityDir = newDir;
+                player.onGround = false;
+                player.vy = 0;
+                audio.jump(); // Звук портала
+                particles.burst(camera.worldToScreen(obs.x + obs.width / 2), obs.y + obs.height / 2, newDir === -1 ? '#ff00aa' : '#00aaff', 15);
+              }
+              usedObjects.add(obs);
+            }
+          }
+          else if (obs.type === 'laser') {
+            const isActive = Math.floor(frame / 60) % 4 < 2; // 2 сек включен, 2 сек выключен
+            if (isActive && aabbCollision(player, hitbox)) {
+              const died = player.takeDamage(1);
+              if (died) {
+                particles.burst(camera.worldToScreen(player.x) + ENTITY_SIZE / 2, player.y + ENTITY_SIZE / 2, '#ff0044', 15);
+                setDeath({ score: Math.floor(camera.x / 10), kills });
+                return;
+              }
             }
           }
         }
@@ -771,7 +830,7 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
             const SPIKE_R = 18;
             const px = player.x, py = player.y, pw = player.width, ph = player.height;
             if (px < spikeWX + SPIKE_R && px + pw > spikeWX - SPIKE_R &&
-                py < spikeY + SPIKE_R && py + ph > spikeY - SPIKE_R) {
+              py < spikeY + SPIKE_R && py + ph > spikeY - SPIKE_R) {
               if (player.takeDamage(1)) { dieInCorridor(); return; }
             }
           }
@@ -787,7 +846,7 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
             const half = rb.size / 2 + 4; // небольшой буфер
             const px = player.x, py = player.y, pw = player.width, ph = player.height;
             if (px < blockWX + half && px + pw > blockWX - half &&
-                py < blockY + half && py + ph > blockY - half) {
+              py < blockY + half && py + ph > blockY - half) {
               if (player.takeDamage(1)) { dieInCorridor(); return; }
             }
           }
@@ -826,7 +885,7 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
       }
 
       // --- RENDER ---
-      renderFrame(ctx, frame, camera, stars, obstacles, movingPlatforms, fallingBlocks, pendulums, enemies, powerups, bullets, enemyBullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp, bgGradCache, groundGradCache, groundLineColor, levelCoins, coinsCollected, sparks, binaryDrops);
+      renderFrame(ctx, frame, camera, stars, obstacles, movingPlatforms, fallingBlocks, pendulums, enemies, powerups, bullets, enemyBullets, bombs, player, particles, kills, muzzleFlash, boss, bossPhase, bossIntroTimer, arenaX, inp, bgGradCache, groundGradCache, groundLineColor, levelCoins, coinsCollected, sparks, binaryDrops, speed, levelLength);
 
       rafRef.current = requestAnimationFrame(loop);
     };
@@ -844,6 +903,7 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
       bgGrad: CanvasGradient, groundGrad: CanvasGradient, groundLineColor: string,
       liveCoins: LiveCoin[], _sessionCoins: number,
       sparksArg: Spark[], binaryDropsArg: BinaryDrop[],
+      currentSpeed?: number, currentLevelLength?: number,
     ) {
       // Тряска экрана от боссов (Crusher / FrostKing)
       const shakeVal = boss && 'screenShake' in boss ? (boss as { screenShake: number }).screenShake : 0;
@@ -882,7 +942,7 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
       const glowLayers = [
         { w: 6, alpha: 0.12 },
         { w: 2, alpha: 0.35 },
-        { w: 1, alpha: 0.9  },
+        { w: 1, alpha: 0.9 },
       ];
       for (const layer of glowLayers) {
         ctx.strokeStyle = groundLineColor;
@@ -1037,6 +1097,9 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
       }
 
       // Взрывы
+      // Speed lines effect
+      if (currentSpeed) drawSpeedLines(ctx, currentSpeed, frame);
+
       particles.draw(ctx);
 
       // --- HUD ---
@@ -1053,6 +1116,7 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
         corridor: corridor ?? null,
         levelId,
         skinColor,
+        levelLength: currentLevelLength,
       };
 
       if (drawBossIntro(ctx, hudState)) {
@@ -1142,42 +1206,59 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
   // === Level Complete screen ===
   if (levelComplete) {
     const hasNextLevel = levelId < TOTAL_LEVELS;
+    const levelName = LEVEL_INFO[levelId - 1]?.name ?? `Level ${levelId}`;
+    // Stars: 1 = complete, 2 = 10+ kills, 3 = high score
+    const starCount = 1 + (levelComplete.kills >= 10 ? 1 : 0) + (levelComplete.score >= 1000 ? 1 : 0);
     return (
-      <div
-        style={{
-          width: CANVAS_WIDTH, maxWidth: '100%', height: CANVAS_HEIGHT,
-          background: 'rgba(0,0,0,0.92)', display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', borderRadius: 12,
-          fontFamily: 'monospace',
-        }}
-      >
-        {/* Звезда победы */}
-        <div style={{ fontSize: 48, marginBottom: 4, filter: 'drop-shadow(0 0 12px #ffd700)' }}>&#9733;</div>
-        <div style={{ fontSize: 36, fontWeight: 'bold', color: '#fff', textShadow: '0 0 20px rgba(0,255,204,0.5)', marginBottom: 12 }}>
+      <div style={{
+        ...screenContainerStyle(),
+        background: 'radial-gradient(ellipse at 50% 30%, #0a1a3a 0%, #050510 70%)',
+      }}>
+        {/* Stars */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+          {[0, 1, 2].map(i => (
+            <span key={i} style={{
+              fontSize: 44, color: i < starCount ? NEON_GOLD : 'rgba(255,255,255,0.12)',
+              filter: i < starCount ? 'drop-shadow(0 0 12px rgba(255,215,0,0.7))' : 'none',
+              animation: i < starCount ? `starSpin 0.5s ease-out ${i * 0.15}s both` : 'none',
+            }}>★</span>
+          ))}
+        </div>
+        <div style={{
+          fontSize: 38, fontWeight: 900, color: '#fff', fontFamily: FONT_TITLE,
+          animation: 'neonPulse 3s ease-in-out infinite', marginBottom: 4, letterSpacing: 3,
+        }}>
           LEVEL COMPLETE
         </div>
-        <div style={{ color: '#00ffcc', fontSize: 14, marginBottom: 8 }}>
-          {LEVEL_INFO[levelId - 1]?.name ?? `Level ${levelId}`} — Boss Defeated!
+        <div style={{
+          fontSize: 14, color: NEON_CYAN, fontFamily: FONT_BODY, fontWeight: 700,
+          letterSpacing: 2, marginBottom: 20, textShadow: `0 0 10px ${NEON_CYAN}66`,
+        }}>
+          {levelName} — Boss Defeated!
         </div>
-        <div style={{ color: '#fff', fontSize: 20, marginBottom: 5 }}>
-          Score: {levelComplete.score}
+        {/* Stats */}
+        <div style={{ display: 'flex', gap: 24, marginBottom: 6 }}>
+          <div style={{ textAlign: 'center', animation: 'slideUp 0.4s ease-out 0.2s both' }}>
+            <div style={{ fontSize: 24, fontWeight: 900, color: '#fff', fontFamily: FONT_TITLE }}>{levelComplete.score}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontFamily: FONT_BODY }}>SCORE</div>
+          </div>
+          <div style={{ textAlign: 'center', animation: 'slideUp 0.4s ease-out 0.35s both' }}>
+            <div style={{ fontSize: 24, fontWeight: 900, color: '#ff4466', fontFamily: FONT_TITLE }}>{levelComplete.kills}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontFamily: FONT_BODY }}>KILLS</div>
+          </div>
+          <div style={{ textAlign: 'center', animation: 'slideUp 0.4s ease-out 0.5s both' }}>
+            <div style={{ fontSize: 24, fontWeight: 900, color: NEON_GOLD, fontFamily: FONT_TITLE }}>{levelComplete.coinsCollected}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontFamily: FONT_BODY }}>COINS</div>
+          </div>
         </div>
-        <div style={{ color: '#fff', fontSize: 20, marginBottom: 5 }}>
-          Kills: {levelComplete.kills}
-        </div>
-        <div style={{ height: 20 }} />
+        <div style={{ height: 16 }} />
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
           {hasNextLevel ? (
-            <button style={primaryBtnStyle()} onClick={onNextLevel}>Next Level</button>
+            <button style={{ ...primaryBtnStyle(), minWidth: 180 }} onClick={onNextLevel}>Next Level ▶</button>
           ) : (
-            <button
-              style={{ ...neonBtnStyle(), cursor: 'default', opacity: 0.4 }}
-              disabled
-            >
-              Coming Soon...
-            </button>
+            <button style={{ ...neonBtnStyle(), cursor: 'default', opacity: 0.4 }} disabled>Coming Soon...</button>
           )}
-          <button style={neonBtnStyle()} onClick={onBack}>Menu</button>
+          <button style={{ ...ghostBtnStyle(), padding: '14px 30px' }} onClick={onBack}>Menu</button>
         </div>
       </div>
     );
@@ -1186,24 +1267,36 @@ export function GameCanvas({ levelId, onBack, onRestart, onNextLevel }: GameCanv
   // === Death screen ===
   if (death) {
     return (
-      <div
-        style={{
-          width: CANVAS_WIDTH, maxWidth: '100%', height: CANVAS_HEIGHT,
-          background: 'rgba(0,0,0,0.92)', display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', borderRadius: 12,
-          fontFamily: 'monospace',
-        }}
-      >
-        <div style={{ fontSize: 36, fontWeight: 'bold', color: '#fff', textShadow: '0 0 20px rgba(255,80,80,0.6)', marginBottom: 10 }}>
-          Crash!
+      <div style={{
+        ...screenContainerStyle(),
+        background: 'radial-gradient(ellipse at 50% 40%, #2a0a0a 0%, #050510 70%)',
+      }}>
+        <div style={{
+          fontSize: 52, fontWeight: 900, color: '#ff3344',
+          fontFamily: FONT_TITLE, letterSpacing: 6,
+          textShadow: '0 0 30px rgba(255,50,50,0.6), 0 0 60px rgba(255,0,0,0.2)',
+          animation: 'shake 0.5s ease-out', marginBottom: 6,
+        }}>
+          CRASH!
         </div>
-        <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 20, marginBottom: 5 }}>
-          Score: {death.score} | Kills: {death.kills}
+        <div style={{
+          width: 60, height: 2, borderRadius: 1, marginBottom: 20,
+          background: 'linear-gradient(90deg, transparent, #ff3344, transparent)',
+          boxShadow: '0 0 10px rgba(255,50,50,0.5)',
+        }} />
+        <div style={{ display: 'flex', gap: 24, marginBottom: 24, animation: 'slideUp 0.4s ease-out 0.2s both' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 22, fontWeight: 900, color: '#fff', fontFamily: FONT_TITLE }}>{death.score}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontFamily: FONT_BODY }}>SCORE</div>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 22, fontWeight: 900, color: '#ff4466', fontFamily: FONT_TITLE }}>{death.kills}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontFamily: FONT_BODY }}>KILLS</div>
+          </div>
         </div>
-        <div style={{ height: 20 }} />
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-          <button style={primaryBtnStyle()} onClick={onRestart}>Restart</button>
-          <button style={neonBtnStyle()} onClick={onBack}>Menu</button>
+          <button style={{ ...primaryBtnStyle(), minWidth: 180, background: 'linear-gradient(135deg, #cc3344, #ff4455, #cc3344)' }} onClick={onRestart}>↻ Restart</button>
+          <button style={{ ...ghostBtnStyle(), padding: '14px 30px' }} onClick={onBack}>Menu</button>
         </div>
       </div>
     );

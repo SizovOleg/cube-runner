@@ -146,102 +146,281 @@ export class Enemy {
       return;
     }
 
-    const color = this.type === 'armored' ? '#aa2222' : COLORS.enemy;
-    // Пульсирующее свечение (shadowBlur 8-15px по синусоиде)
-    const glowPulse = 8 + Math.sin(frame * 0.08) * 7;
+    const color = this.type === 'armored' ? '#cc3333' : COLORS.enemy;
+    const darkColor = this.type === 'armored' ? '#661111' : '#661122';
+    const glowPulse = 10 + Math.sin(frame * 0.08) * 8;
+    const s = this.width;
+    const x = screenX;
+    const y = this.y;
 
-    // === Flying: крылья ===
+    // === Flying: detailed gradient wings ===
     if (this.type === 'flying') {
-      const wingFlap = Math.sin(frame * 0.15) * 5;
-      ctx.fillStyle = 'rgba(255,100,100,0.4)';
+      const wingFlap = Math.sin(frame * 0.15) * 6;
+      const wingAlpha = 0.5 + Math.sin(frame * 0.15) * 0.15;
+      ctx.globalAlpha = wingAlpha;
+      // Left wing
+      const wingGradL = ctx.createLinearGradient(x - 14, y + 10, x, y + 15);
+      wingGradL.addColorStop(0, 'rgba(255,120,120,0.15)');
+      wingGradL.addColorStop(0.5, 'rgba(255,80,80,0.5)');
+      wingGradL.addColorStop(1, color);
+      ctx.fillStyle = wingGradL;
       ctx.beginPath();
-      ctx.moveTo(screenX, this.y + 8);
-      ctx.lineTo(screenX - 10, this.y + 12 + wingFlap);
-      ctx.lineTo(screenX, this.y + 20);
+      ctx.moveTo(x + 2, y + 6);
+      ctx.lineTo(x - 14, y + 10 + wingFlap);
+      ctx.lineTo(x - 8, y + 18 + wingFlap * 0.5);
+      ctx.lineTo(x + 2, y + 22);
       ctx.closePath();
       ctx.fill();
+      // Right wing
+      const wingGradR = ctx.createLinearGradient(x + s, y + 15, x + s + 14, y + 10);
+      wingGradR.addColorStop(0, color);
+      wingGradR.addColorStop(0.5, 'rgba(255,80,80,0.5)');
+      wingGradR.addColorStop(1, 'rgba(255,120,120,0.15)');
+      ctx.fillStyle = wingGradR;
       ctx.beginPath();
-      ctx.moveTo(screenX + this.width, this.y + 8);
-      ctx.lineTo(screenX + this.width + 10, this.y + 12 + wingFlap);
-      ctx.lineTo(screenX + this.width, this.y + 20);
+      ctx.moveTo(x + s - 2, y + 6);
+      ctx.lineTo(x + s + 14, y + 10 + wingFlap);
+      ctx.lineTo(x + s + 8, y + 18 + wingFlap * 0.5);
+      ctx.lineTo(x + s - 2, y + 22);
       ctx.closePath();
       ctx.fill();
+      // Wing bone lines
+      ctx.strokeStyle = 'rgba(255,200,200,0.3)';
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(x + 2, y + 12);
+      ctx.lineTo(x - 10, y + 12 + wingFlap * 0.7);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x + s - 2, y + 12);
+      ctx.lineTo(x + s + 10, y + 12 + wingFlap * 0.7);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
     }
 
-    // Тело: градиент (светлее к центру сверху, темнее внизу) + скруглённые углы
-    const bodyGrad = ctx.createLinearGradient(screenX, this.y, screenX, this.y + this.height);
-    bodyGrad.addColorStop(0, color + 'ff');
-    bodyGrad.addColorStop(0.4, color + 'cc');
-    bodyGrad.addColorStop(1, color + '55');
-    ctx.fillStyle = bodyGrad;
+    // ── Layer 1: Ground shadow ──
+    if (this.type !== 'flying') {
+      ctx.globalAlpha = 0.15;
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.ellipse(x + s / 2, y + s + 2, s / 2 - 2, 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // ── Layer 2: Outer glow ──
     ctx.shadowColor = color;
     ctx.shadowBlur = glowPulse;
-    roundRect(ctx, screenX, this.y, this.width, this.height, 4);
+    ctx.fillStyle = color + '22';
+    roundRect(ctx, x - 3, y - 3, s + 6, s + 6, 6);
     ctx.fill();
     ctx.shadowBlur = 0;
 
-    // Highlight (светлый верх)
-    ctx.globalAlpha = 0.2;
-    ctx.fillStyle = '#fff';
-    roundRect(ctx, screenX + 2, this.y + 2, this.width - 4, 6, 3);
+    // ── Layer 3: Dark border (depth) ──
+    ctx.fillStyle = darkColor;
+    roundRect(ctx, x - 1, y - 1, s + 2, s + 2, 5);
+    ctx.fill();
+
+    // ── Layer 4: Body with radial gradient ──
+    const bodyGrad = ctx.createRadialGradient(x + s * 0.35, y + s * 0.3, 0, x + s / 2, y + s / 2, s * 0.8);
+    bodyGrad.addColorStop(0, color);
+    bodyGrad.addColorStop(0.5, color);
+    bodyGrad.addColorStop(1, darkColor);
+    ctx.fillStyle = bodyGrad;
+    roundRect(ctx, x, y, s, s, 4);
+    ctx.fill();
+
+    // ── Layer 5: Inner edge shadows (3D depth) ──
+    ctx.save();
+    roundRect(ctx, x, y, s, s, 4);
+    ctx.clip();
+    const innerV = ctx.createLinearGradient(x, y, x, y + s);
+    innerV.addColorStop(0, 'rgba(255,180,180,0.15)');
+    innerV.addColorStop(0.15, 'rgba(0,0,0,0)');
+    innerV.addColorStop(0.85, 'rgba(0,0,0,0.1)');
+    innerV.addColorStop(1, 'rgba(0,0,0,0.3)');
+    ctx.fillStyle = innerV;
+    ctx.fillRect(x, y, s, s);
+
+    // ── Layer 6: Diagonal stripe pattern (GD detail) ──
+    ctx.globalAlpha = 0.07;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    for (let i = -s; i < s * 2; i += 6) {
+      ctx.beginPath();
+      ctx.moveTo(x + i, y);
+      ctx.lineTo(x + i + s, y + s);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // ── Inner X mark (danger symbol) ──
+    ctx.globalAlpha = 0.08;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x + 6, y + 6);
+    ctx.lineTo(x + s - 6, y + s - 6);
+    ctx.moveTo(x + s - 6, y + 6);
+    ctx.lineTo(x + 6, y + s - 6);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    // ── Layer 7: Top highlight ──
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = '#ffffff';
+    roundRect(ctx, x + 3, y + 2, s - 6, 5, 2);
     ctx.fill();
     ctx.globalAlpha = 1;
 
-    // === Armored: металлический блеск ===
+    // ── Layer 8: Specular shine ──
+    ctx.globalAlpha = 0.2;
+    const spec = ctx.createRadialGradient(x + 7, y + 7, 0, x + 7, y + 7, s * 0.4);
+    spec.addColorStop(0, '#ffffff');
+    spec.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = spec;
+    ctx.fillRect(x, y, s * 0.5, s * 0.5);
+    ctx.globalAlpha = 1;
+
+    // ── Armored: double border + metallic sweep ──
     if (this.type === 'armored') {
-      const shineY = (frame * 2) % (this.height + 20) - 10;
-      if (shineY >= 0 && shineY < this.height - 2) {
+      // Extra border ring
+      ctx.strokeStyle = '#ffaa44';
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.4;
+      roundRect(ctx, x + 2, y + 2, s - 4, s - 4, 3);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      // Metallic sweep
+      const shineY = (frame * 2) % (s + 30) - 15;
+      if (shineY >= -5 && shineY < s + 5) {
         ctx.save();
-        roundRect(ctx, screenX, this.y, this.width, this.height, 4);
+        roundRect(ctx, x, y, s, s, 4);
         ctx.clip();
-        ctx.globalAlpha = 0.35;
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(screenX, this.y + shineY, this.width, 3);
+        ctx.globalAlpha = 0.3;
+        const sweepGrad = ctx.createLinearGradient(x, y + shineY - 4, x, y + shineY + 4);
+        sweepGrad.addColorStop(0, 'rgba(255,255,255,0)');
+        sweepGrad.addColorStop(0.5, '#ffffff');
+        sweepGrad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = sweepGrad;
+        ctx.fillRect(x, y + shineY - 4, s, 8);
         ctx.globalAlpha = 1;
         ctx.restore();
       }
     }
 
-    // Глаза с бликами
-    ctx.fillStyle = COLORS.enemyEye;
-    const blink = Math.sin(frame * 0.1) > 0.85;
-    ctx.fillRect(screenX + 6, this.y + 8, 6, blink ? 1 : 5);
-    ctx.fillRect(screenX + 18, this.y + 8, 6, blink ? 1 : 5);
-    // Блики
-    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    // ── Neon border ──
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.4;
+    roundRect(ctx, x, y, s, s, 4);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // ═══ FACE: round eyes with angry expression ═══
+    const eyeY = y + 9;
+    const eyeSize = 4;
+
+    // Eye whites
+    ctx.fillStyle = '#ffffff';
+    const blink = Math.sin(frame * 0.1) > 0.88;
     if (!blink) {
-      ctx.fillRect(screenX + 6, this.y + 8, 2, 2);
-      ctx.fillRect(screenX + 18, this.y + 8, 2, 2);
+      ctx.beginPath();
+      ctx.arc(x + 10, eyeY, eyeSize, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x + s - 10, eyeY, eyeSize, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Pupils (red-tinted)
+      ctx.fillStyle = '#330000';
+      ctx.beginPath();
+      ctx.arc(x + 10.5, eyeY + 0.5, eyeSize - 1.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x + s - 9.5, eyeY + 0.5, eyeSize - 1.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Pupil glint
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(x + 9, eyeY - 1, 1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x + s - 11, eyeY - 1, 1, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Blink — thin lines
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x + 6, eyeY);
+      ctx.lineTo(x + 14, eyeY);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x + s - 14, eyeY);
+      ctx.lineTo(x + s - 6, eyeY);
+      ctx.stroke();
     }
 
-    // Злые брови
+    // Angry eyebrows (thicker)
     ctx.strokeStyle = COLORS.enemyEye;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.moveTo(screenX + 5, this.y + 5);
-    ctx.lineTo(screenX + 13, this.y + 7);
+    ctx.moveTo(x + 5, eyeY - 6);
+    ctx.lineTo(x + 14, eyeY - 3);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(screenX + 25, this.y + 5);
-    ctx.lineTo(screenX + 17, this.y + 7);
+    ctx.moveTo(x + s - 5, eyeY - 6);
+    ctx.lineTo(x + s - 14, eyeY - 3);
     ctx.stroke();
 
-    // === Shooter: красная точка-прицел мигает перед выстрелом ===
-    if (this.type === 'shooter' && this.shootCooldown > 0 && this.shootCooldown < 20) {
-      const dotRadius = 2 + Math.sin(frame * 0.5) * 1;
-      ctx.fillStyle = '#ff0000';
-      ctx.shadowColor = '#ff0000';
-      ctx.shadowBlur = 6;
+    // Mouth — angry grin
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x + 8, y + s - 9);
+    ctx.quadraticCurveTo(x + s / 2, y + s - 5, x + s - 8, y + s - 9);
+    ctx.stroke();
+
+    // === Shooter: animated laser sight ===
+    if (this.type === 'shooter' && this.shootCooldown > 0 && this.shootCooldown < 25) {
+      const chargeProgress = 1 - this.shootCooldown / 25;
+      const dotRadius = 2 + chargeProgress * 2;
+      const laserAlpha = 0.3 + chargeProgress * 0.5;
+      // Laser line
+      ctx.globalAlpha = laserAlpha * 0.3;
+      ctx.strokeStyle = '#ff0000';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
       ctx.beginPath();
-      ctx.arc(screenX + this.width / 2, this.y + this.height / 2 + 2, dotRadius, 0, Math.PI * 2);
+      ctx.moveTo(x, y + s / 2 + 2);
+      ctx.lineTo(x - 80, y + s / 2 + 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      // Charge dot
+      ctx.fillStyle = '#ff0000';
+      ctx.shadowColor = '#ff4444';
+      ctx.shadowBlur = 8 + chargeProgress * 8;
+      ctx.beginPath();
+      ctx.arc(x + s / 2, y + s / 2 + 2, dotRadius, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
     }
 
-    // Индикатор HP для armored
+    // HP indicator for armored
     if (this.type === 'armored' && this.hp > 1) {
       ctx.fillStyle = '#ffaa00';
-      ctx.fillRect(screenX + 10, this.y - 6, 10, 3);
+      ctx.shadowColor = '#ffaa00';
+      ctx.shadowBlur = 4;
+      for (let i = 0; i < this.hp; i++) {
+        ctx.beginPath();
+        ctx.arc(x + s / 2 - 4 + i * 8, y - 8, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
     }
   }
 

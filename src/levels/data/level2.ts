@@ -1,84 +1,222 @@
-import { 
-  GROUND_Y, 
-  ENTITY_SIZE, 
-  COLORS, 
-  LEVEL_WIDTH 
-} from '@utils/constants';
 import { LevelData } from '../types';
+import { GROUND_Y, ENTITY_SIZE } from '@utils/constants';
 
 /**
- * Level 2: "Orbital Heights"
- * Focus on Jump Rings / Orbs (Geometry Dash style).
+ * Уровень 2: Кибер-Канализация
+ * Сложнее уровня 1: больше врагов, движущиеся платформы, шутеры, двойные/тройные шипы.
+ * Босс: Crusher — огромный фиолетовый куб 80x80.
  */
-export const level2: LevelData = {
+const level2: LevelData = {
   id: 2,
-  name: "Orbital Heights",
-  difficulty: 2,
-  theme: "sky",
-  platforms: [
-    { x: 0, y: GROUND_Y, width: 1000, height: 100, type: 'platform' },
-    { x: 1200, y: GROUND_Y - 140, width: 200, height: 20, type: 'platform' },
-    { x: 1600, y: GROUND_Y - 250, width: 250, height: 20, type: 'platform' },
-    // Gap section
-    { x: 2500, y: GROUND_Y - 100, width: 300, height: 20, type: 'platform' },
-    { x: 3000, y: GROUND_Y - 200, width: 300, height: 20, type: 'platform' },
-    { x: 3500, y: GROUND_Y, width: 1500, height: 100, type: 'platform' }
-  ],
-  obstacles: [
-    { x: 400, y: GROUND_Y - 30, width: 30, height: 30, type: 'obstacle', subType: 'spikes' },
-    { x: 600, y: GROUND_Y - 30, width: 30, height: 30, type: 'obstacle', subType: 'spikes' },
-    
-    // Jump Ring intro (Yellow - normal jump)
-    { x: 1100, y: GROUND_Y - 180, width: 40, height: 40, type: 'jump-ring', subType: 'yellow' },
-    
-    // Tiny platforms with Jump Rings
-    { x: 1450, y: GROUND_Y - 100, width: 40, height: 40, type: 'jump-ring', subType: 'yellow' },
-    { x: 1900, y: GROUND_Y - 200, width: 40, height: 40, type: 'jump-ring', subType: 'pink' }, // Pink - small jump
-    
-    // Complex ring section over a gap
-    { x: 2200, y: GROUND_Y - 150, width: 40, height: 40, type: 'jump-ring', subType: 'yellow' },
-    { x: 2350, y: GROUND_Y - 250, width: 40, height: 40, type: 'jump-ring', subType: 'yellow' },
-    
-    // Spikes on platforms in the middle
-    { x: 2600, y: GROUND_Y - 125, width: 25, height: 25, type: 'obstacle', subType: 'spikes' },
-    { x: 2750, y: GROUND_Y - 125, width: 25, height: 25, type: 'obstacle', subType: 'spikes' },
-    
-    // Red Jump Pad for a big boost
-    { x: 3400, y: GROUND_Y - 20, width: 40, height: 20, type: 'jump-pad', subType: 'red', jumpForce: -20 },
-    
-    // Triple spikes at the end
-    { x: 3800, y: GROUND_Y - 30, width: 30, height: 30, type: 'obstacle', subType: 'spikes' },
-    { x: 3830, y: GROUND_Y - 30, width: 30, height: 30, type: 'obstacle', subType: 'spikes' },
-    { x: 3860, y: GROUND_Y - 30, width: 30, height: 30, type: 'obstacle', subType: 'spikes' },
+  name: 'Кибер-Канализация',
+  description: 'Тёмные тоннели под неоновым городом',
+  length: 15000,
+  backgroundColor: '#0a1a0e',
+  groundColor: '#1a2e1a',
 
-    // Decorations
-    { x: 150, y: GROUND_Y - 80, width: 40, height: 80, type: 'decoration', subType: 'cloud' },
-    { x: 800, y: GROUND_Y - 150, width: 60, height: 40, type: 'decoration', subType: 'cloud' },
+  obstacles: [
+    // === Секция 1 (0-2000): Вход — двойные шипы, батуты и сферы ===
+    { x: 500, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 560, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 800, y: GROUND_Y - 10, width: 40, height: 10, type: 'jump_pad_yellow' },
+    { x: 950, y: GROUND_Y - 120, width: 30, height: 30, type: 'jump_ring_yellow' },
+    { x: 1200, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 1260, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 1500, y: GROUND_Y - 100, width: 70, height: 15, type: 'moving_platform', moveRange: 60, moveSpeed: 1.2, moveAxis: 'y' },
+    { x: 1750, y: GROUND_Y - 10, width: 40, height: 10, type: 'jump_pad_pink' },
+    { x: 1950, y: GROUND_Y - 60, width: 70, height: 15, type: 'platform' },
+
+    // === Секция 2 (2000-4000): Каньон с шутерами и разрушаемыми блоками ===
+    { x: 2100, y: GROUND_Y - 70, width: 90, height: 15, type: 'platform' },
+    { x: 2350, y: GROUND_Y - 30, width: 30, height: 30, type: 'breakable_block' },
+    { x: 2350, y: GROUND_Y - 60, width: 30, height: 30, type: 'breakable_block' },
+    { x: 2450, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 2510, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 2700, y: GROUND_Y - 110, width: 80, height: 15, type: 'moving_platform', moveRange: 50, moveSpeed: 1.0, moveAxis: 'y' },
+    { x: 2900, y: GROUND_Y - 30, width: 30, height: 30, type: 'breakable_block' },
+    { x: 3000, y: GROUND_Y - 60, width: 100, height: 15, type: 'platform' },
+    { x: 3300, y: GROUND_Y - 10, width: 40, height: 10, type: 'jump_pad_red' }, // Супер прыжок
+    { x: 3450, y: GROUND_Y - 150, width: 70, height: 15, type: 'platform' },
+    { x: 3600, y: GROUND_Y - 150, width: 70, height: 15, type: 'platform' },
+    { x: 3800, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 3950, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+
+    // === Секция 3 (4000-6500): Лазеры и сфера ===
+    { x: 4100, y: GROUND_Y - 50, width: 80, height: 15, type: 'platform' },
+    { x: 4300, y: GROUND_Y - 150, width: 20, height: 150, type: 'laser' }, // Лазерная преграда
+    { x: 4500, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 4560, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 4800, y: GROUND_Y - 130, width: 90, height: 15, type: 'platform' },
+    { x: 4950, y: GROUND_Y - 150, width: 30, height: 30, type: 'jump_ring_pink' },
+    { x: 5100, y: GROUND_Y - 70, width: 70, height: 15, type: 'moving_platform', moveRange: 70, moveSpeed: 0.8, moveAxis: 'y' },
+    { x: 5350, y: GROUND_Y - 10, width: 40, height: 10, type: 'jump_pad_yellow' },
+    { x: 5500, y: GROUND_Y - 150, width: 30, height: 30, type: 'jump_ring_yellow' },
+    { x: 5700, y: GROUND_Y - 90, width: 80, height: 15, type: 'platform' },
+    { x: 6000, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 6200, y: GROUND_Y - 60, width: 80, height: 15, type: 'platform' },
+    { x: 6400, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+
+    // === Секция 4 (6500-9000): Зона Порталов Гравитации ===
+    { x: 6600, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 6800, y: GROUND_Y - 80, width: 40, height: 80, type: 'gravity_portal_up' }, // Гравитация вверх!
+    { x: 7000, y: 70, width: 20, height: 20, type: 'spike' }, // Шип на потолке
+    { x: 7200, y: 50, width: 90, height: 15, type: 'platform' }, // Платформа на потолке
+    { x: 7400, y: 70, width: 20, height: 20, type: 'spike' },
+    { x: 7600, y: 50, width: 40, height: 80, type: 'gravity_portal_down' }, // Возврат на землю
+    { x: 7800, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 7900, y: GROUND_Y - 120, width: 80, height: 15, type: 'platform' },
+    { x: 8200, y: GROUND_Y - 80, width: 70, height: 15, type: 'moving_platform', moveRange: 60, moveSpeed: 1.1, moveAxis: 'y' },
+    { x: 8450, y: GROUND_Y - 30, width: 30, height: 30, type: 'breakable_block' },
+    { x: 8450, y: GROUND_Y - 60, width: 30, height: 30, type: 'breakable_block' },
+    { x: 8450, y: GROUND_Y - 90, width: 30, height: 30, type: 'breakable_block' },
+    { x: 8650, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 8800, y: GROUND_Y - 70, width: 90, height: 15, type: 'platform' },
+
+    // === Секция 5 (9000-10500): Ракетный коридор (препятствия убраны) ===
+    { x: 10620, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 10800, y: GROUND_Y - 80, width: 70, height: 15, type: 'moving_platform', moveRange: 45, moveSpeed: 1.4, moveAxis: 'y' },
+    { x: 10950, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+
+    // === Секция 6 (11000-13500): Финальная полоса перед боссом ===
+    { x: 11100, y: GROUND_Y - 60, width: 90, height: 15, type: 'platform' },
+    { x: 11300, y: GROUND_Y - 10, width: 40, height: 10, type: 'jump_pad_yellow' },
+    { x: 11500, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 11560, y: GROUND_Y - 20, width: 20, height: 20, type: 'spike' },
+    { x: 11800, y: GROUND_Y - 100, width: 80, height: 15, type: 'moving_platform', moveRange: 60, moveSpeed: 1.2, moveAxis: 'y' },
+    { x: 12100, y: GROUND_Y - 70, width: 80, height: 15, type: 'platform' },
+    { x: 12250, y: GROUND_Y - 150, width: 30, height: 30, type: 'jump_ring_pink' },
+    { x: 12450, y: GROUND_Y - 150, width: 20, height: 150, type: 'laser' },
+    { x: 12700, y: GROUND_Y - 120, width: 70, height: 15, type: 'moving_platform', moveRange: 50, moveSpeed: 1.5, moveAxis: 'y' },
+    { x: 12900, y: GROUND_Y - 10, width: 40, height: 10, type: 'jump_pad_red' },
+    { x: 13300, y: GROUND_Y - 80, width: 100, height: 15, type: 'platform' },
   ],
+
   enemies: [
-    { x: 2100, y: GROUND_Y - 50, width: 40, height: 40, type: 'enemy', subType: 'flyer', hp: 1 },
-    { x: 3200, y: GROUND_Y - 240, width: 40, height: 40, type: 'enemy', subType: 'flyer', hp: 1 }
+    // Секция 1
+    { x: 700, y: GROUND_Y - ENTITY_SIZE, type: 'basic' },
+    { x: 920, y: GROUND_Y - 80 - ENTITY_SIZE, type: 'basic' },
+    { x: 1700, y: GROUND_Y - ENTITY_SIZE, type: 'basic' },
+
+    // Секция 2: первые шутеры
+    { x: 2120, y: GROUND_Y - 70 - ENTITY_SIZE, type: 'shooter' },
+    { x: 2900, y: GROUND_Y - ENTITY_SIZE, type: 'basic' },
+    { x: 3020, y: GROUND_Y - 60 - ENTITY_SIZE, type: 'shooter' },
+    { x: 3620, y: GROUND_Y - 90 - ENTITY_SIZE, type: 'basic' },
+
+    // Секция 3
+    { x: 4120, y: GROUND_Y - 50 - ENTITY_SIZE, type: 'basic' },
+    { x: 4820, y: GROUND_Y - 130 - ENTITY_SIZE, type: 'shooter' },
+    { x: 5600, y: GROUND_Y - ENTITY_SIZE, type: 'basic' },
+    { x: 5720, y: GROUND_Y - 90 - ENTITY_SIZE, type: 'shooter' },
+    { x: 6220, y: GROUND_Y - 60 - ENTITY_SIZE, type: 'basic' },
+
+    // Секция 4: плотная зона
+    { x: 6800, y: GROUND_Y - ENTITY_SIZE, type: 'basic' },
+    { x: 7220, y: GROUND_Y - 60 - ENTITY_SIZE, type: 'shooter' },
+    { x: 7800, y: GROUND_Y - ENTITY_SIZE, type: 'basic' },
+    { x: 7920, y: GROUND_Y - 120 - ENTITY_SIZE, type: 'shooter' },
+    { x: 8400, y: GROUND_Y - ENTITY_SIZE, type: 'basic' },
+    { x: 8820, y: GROUND_Y - 70 - ENTITY_SIZE, type: 'shooter' },
+
+    // Секция 5: ракетный коридор — враги убраны
+
+    // Секция 6: финал
+    { x: 11120, y: GROUND_Y - 60 - ENTITY_SIZE, type: 'shooter' },
+    { x: 11900, y: GROUND_Y - ENTITY_SIZE, type: 'basic' },
+    { x: 12120, y: GROUND_Y - 70 - ENTITY_SIZE, type: 'shooter' },
+    { x: 12600, y: GROUND_Y - ENTITY_SIZE, type: 'basic' },
+    { x: 13000, y: GROUND_Y - ENTITY_SIZE, type: 'basic' },
+    { x: 13320, y: GROUND_Y - 80 - ENTITY_SIZE, type: 'shooter' },
+
+    // Chomper-ы
+    { x: 1600, y: GROUND_Y - ENTITY_SIZE, type: 'chomper' },
+    { x: 3800, y: GROUND_Y - ENTITY_SIZE, type: 'chomper' },
+    { x: 6100, y: GROUND_Y - ENTITY_SIZE, type: 'chomper' },
+    { x: 11600, y: GROUND_Y - ENTITY_SIZE, type: 'chomper' },
   ],
+
   powerups: [
-    { x: 1700, y: GROUND_Y - 320, width: 30, height: 30, type: 'powerup', subType: 'slowmo' },
-    { x: 3100, y: GROUND_Y - 280, width: 30, height: 30, type: 'powerup', subType: 'shield' }
+    { x: 1000, y: GROUND_Y - 60, type: 'shield' },
+    { x: 2800, y: GROUND_Y - 80, type: 'bomb' },
+    { x: 4700, y: GROUND_Y - 50, type: 'rocket' },
+    { x: 6400, y: GROUND_Y - 70, type: 'shield' },
+    { x: 8600, y: GROUND_Y - 60, type: 'bomb' },
+    { x: 12300, y: GROUND_Y - 50, type: 'rocket' },
   ],
+
+  cages: [
+    { x: 3460, y: GROUND_Y - 140, skinId: 'pink' },
+    { x: 7920, y: GROUND_Y - 150, skinId: 'white' },
+  ],
+
   coins: [
-    { x: 1100, y: GROUND_Y - 250, width: 25, height: 25, type: 'coin' },
-    { x: 1450, y: GROUND_Y - 180, width: 25, height: 25, type: 'coin' },
-    { x: 1900, y: GROUND_Y - 280, width: 25, height: 25, type: 'coin' },
-    { x: 2200, y: GROUND_Y - 220, width: 25, height: 25, type: 'coin' },
-    { x: 2350, y: GROUND_Y - 320, width: 25, height: 25, type: 'coin' },
-    { x: 3600, y: GROUND_Y - 80, width: 25, height: 25, type: 'coin' }
+    // Группа 1
+    { x: 500, y: GROUND_Y - 60 },
+    { x: 560, y: GROUND_Y - 60 },
+    { x: 620, y: GROUND_Y - 60 },
+    // Группа 2: дуга
+    { x: 1600, y: GROUND_Y - 70 },
+    { x: 1660, y: GROUND_Y - 95 },
+    { x: 1720, y: GROUND_Y - 70 },
+    // Группа 3: на платформе (нужен прыжок)
+    { x: 2700, y: GROUND_Y - 130 },
+    { x: 2760, y: GROUND_Y - 130 },
+    { x: 2820, y: GROUND_Y - 130 },
+    // Группа 4
+    { x: 4200, y: GROUND_Y - 60 },
+    { x: 4260, y: GROUND_Y - 80 },
+    { x: 4320, y: GROUND_Y - 60 },
+    // Группа 5: над врагами
+    { x: 5800, y: GROUND_Y - 90 },
+    { x: 5860, y: GROUND_Y - 90 },
+    // Группа 6: перед коридором
+    { x: 8700, y: GROUND_Y - 60 },
+    { x: 8760, y: GROUND_Y - 60 },
+    { x: 8820, y: GROUND_Y - 60 },
+    // Группа 7: финал
+    { x: 11300, y: GROUND_Y - 80 },
+    { x: 11360, y: GROUND_Y - 80 },
   ],
+
+  rocketCorridor: {
+    startX: 8000,
+    endX: 11000,
+    gapSizeFunc: 'variable',
+    movingSpikes: [
+      { offsetX: 400, amplitude: 50, phase: 0, speed: 0.04 },
+      { offsetX: 900, amplitude: 45, phase: 1.2, speed: 0.05 },
+      { offsetX: 1500, amplitude: 55, phase: 0.6, speed: 0.038 },
+      { offsetX: 2100, amplitude: 50, phase: 2.0, speed: 0.045 },
+      { offsetX: 2600, amplitude: 45, phase: 0.4, speed: 0.055 },
+    ],
+    coins: [
+      { offsetX: 650, gapOffset: 0 },
+      { offsetX: 1200, gapOffset: -0.3 },
+      { offsetX: 1800, gapOffset: 0.3 },
+      { offsetX: 2350, gapOffset: 0 },
+    ],
+  },
+
+  // Уровень 2: 3 падающих блока, 2 маятника
+  fallingBlocks: [
+    { x: 2600, y: GROUND_Y - 130, width: 60, height: 16 },
+    { x: 5350, y: GROUND_Y - 140, width: 70, height: 16 },
+    { x: 11800, y: GROUND_Y - 130, width: 65, height: 16 },
+  ],
+
+  pendulums: [
+    // Секция 3
+    { x: 4800, y: GROUND_Y - 230, length: 130, amplitude: 0.9, phase: 0, speed: 0.03, ballRadius: 14 },
+    // Секция 4
+    { x: 7900, y: GROUND_Y - 210, length: 120, amplitude: 1.0, phase: 1.5, speed: 0.035, ballRadius: 14 },
+  ],
+
   boss: {
-    x: 4500,
-    y: GROUND_Y - 150,
-    width: 140,
-    height: 90,
-    type: 'boss',
-    subType: 'serpent',
-    hp: 15,
-    maxHP: 15
-  }
+    type: 'crusher',
+    name: 'CRUSHER',
+    hp: 30,
+    phases: 2,
+  },
 };
+
+export default level2;

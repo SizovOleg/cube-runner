@@ -28,23 +28,48 @@ export function loadProgress(): PlayerProgress {
     if (!parsed.unlockedLevels.includes(1)) {
       parsed.unlockedLevels.push(1);
     }
-    // Миграция: разблокировать уровни 4 и 5 для старых сохранений
-    for (const lvl of [4, 5]) {
+    // Миграция: разблокировать все уровни
+    for (const lvl of [1, 2, 3, 4, 5]) {
       if (!parsed.unlockedLevels.includes(lvl)) {
         parsed.unlockedLevels.push(lvl);
       }
     }
-    // Миграция: старые сохранения без скинов
-    if (!parsed.unlockedSkins) parsed.unlockedSkins = ['green'];
+    // Миграция: старые сохранения без скинов или новые скины
+    if (!parsed.unlockedSkins) parsed.unlockedSkins = [];
     if (!parsed.currentSkin) parsed.currentSkin = 'green';
-    if (!parsed.unlockedSkins.includes('green')) parsed.unlockedSkins.push('green');
-    // Миграция: монеты и апгрейды
-    if (parsed.coins === undefined) parsed.coins = 0;
+    const ALL_SKINS: SkinId[] = ['green', 'gold', 'blue', 'pink', 'white', 'orange'];
+    for (const skin of ALL_SKINS) {
+      if (!parsed.unlockedSkins.includes(skin)) parsed.unlockedSkins.push(skin);
+    }
+    // Миграция: выдать монеты для тестов
+    if (!parsed.coins || parsed.coins < 5000) parsed.coins = 5000;
     if (!parsed.ownedUpgrades) parsed.ownedUpgrades = { ...DEFAULT_OWNED };
     if (!parsed.activeUpgrades) parsed.activeUpgrades = [];
+
+    // Миграция: разблокировать все уровни через побежденных боссов
+    if (!parsed.bossesDefeated) parsed.bossesDefeated = [];
+    for (const boss of [1, 2, 3, 4]) {
+      if (!parsed.bossesDefeated.includes(boss)) {
+        parsed.bossesDefeated.push(boss);
+      }
+    }
+
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+    } catch (e) {
+      // ignore
+    }
+
     return parsed;
   } catch {
-    return { ...DEFAULT_PROGRESS, unlockedLevels: [...DEFAULT_PROGRESS.unlockedLevels], unlockedSkins: [...DEFAULT_PROGRESS.unlockedSkins] };
+    const ALL_SKINS: SkinId[] = ['green', 'gold', 'blue', 'pink', 'white', 'orange'];
+    const defaultData: PlayerProgress = { ...DEFAULT_PROGRESS, unlockedLevels: [1, 2, 3, 4, 5], unlockedSkins: ALL_SKINS, coins: 5000, bossesDefeated: [1, 2, 3, 4] };
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultData));
+    } catch (e) {
+      // ignore
+    }
+    return defaultData;
   }
 }
 
