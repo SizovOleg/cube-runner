@@ -8,31 +8,23 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build project
-        run: npm run build
-
-      - name: Deploy via rsync over SSH
-        uses: appleboy/scp-action@v0.1.7
+      - name: Deploy via SSH (git pull + build on server)
+        uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
           port: 22
-          source: "dist/"
-          target: ${{ secrets.DEPLOY_PATH }}
-          strip_components: 1
-          overwrite: true
+          command_timeout: 10m
+          script: |
+            cd /opt/cube-runner
+            git pull origin main
+            npm ci
+            npm run build
+            cp -r dist/* /var/www/games/cube-runner/
+            echo "Deployment complete!"
